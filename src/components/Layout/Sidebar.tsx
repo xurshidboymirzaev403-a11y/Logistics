@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { currentUserStore, adminModeStore } from '../../store';
+import { REFERENCES_TABS } from '../../constants/references';
 
 interface SidebarProps {
   onLogout: () => void;
@@ -22,17 +23,19 @@ export function Sidebar({ onLogout }: SidebarProps) {
     { path: '/audit', icon: '📋', label: 'Аудит' },
   ];
 
-  const referencesSubItems = [
-    { path: '/references/items', icon: '📦', label: 'Позиции' },
-    { path: '/references/suppliers', icon: '🏢', label: 'Поставщики' },
-  ];
-
   const isActive = (path: string) => {
     if (path === '/dashboard') {
       return location.pathname === path;
     }
     return location.pathname.startsWith(path);
   };
+
+  // Auto-expand References submenu when on a references page
+  useEffect(() => {
+    if (location.pathname.startsWith('/references')) {
+      setIsReferencesOpen(true);
+    }
+  }, [location.pathname]);
 
   return (
     <>
@@ -119,7 +122,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
               {/* Submenu */}
               {isReferencesOpen && (
                 <div className="ml-6 mt-1">
-                  {referencesSubItems.map((subItem) => (
+                  {REFERENCES_TABS.map((subItem) => (
                     <Link
                       key={subItem.path}
                       to={subItem.path}

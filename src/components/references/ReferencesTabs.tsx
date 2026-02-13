@@ -1,17 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
+import { REFERENCES_TABS } from '../../constants/references';
 
 export function ReferencesTabs() {
   const location = useLocation();
 
-  const tabs = [
-    { path: '/references/items', icon: '📦', label: 'Позиции' },
-    { path: '/references/suppliers', icon: '🏢', label: 'Поставщики' },
-  ];
-
   return (
     <div className="border-b border-gray-200 mb-6">
       <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-        {tabs.map((tab) => {
+        {REFERENCES_TABS.map((tab) => {
           const isActive = location.pathname === tab.path;
           return (
             <Link
