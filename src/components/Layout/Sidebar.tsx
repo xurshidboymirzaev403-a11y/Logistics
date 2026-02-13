@@ -102,6 +102,7 @@ export function Sidebar({ onLogout }: SidebarProps) {
             <div className="mb-2">
               <button
                 onClick={() => setIsReferencesOpen(!isReferencesOpen)}
+                aria-label={`Справочники ${isReferencesOpen ? 'свернуть' : 'развернуть'}`}
                 className={`
                   w-full flex items-center gap-3 px-4 py-3 rounded-lg
                   transition-colors duration-200
