@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
@@ -163,7 +163,9 @@ export function CreateOrderPage() {
       key: 'actions',
       label: 'Действия',
       width: '150px',
-      render: (_: any, row: CartItem, index: number) => (
+      render: (_: any, item: CartItem) => {
+        const index = cart.indexOf(item);
+        return (
         <div className="flex gap-2">
           <button
             onClick={() => handleEdit(index)}
@@ -180,7 +182,8 @@ export function CreateOrderPage() {
             🗑️
           </button>
         </div>
-      ),
+        );
+      },
     },
   ];
 
@@ -282,7 +285,7 @@ export function CreateOrderPage() {
               <h2 className="text-xl font-semibold">Корзина ({cart.length} поз.)</h2>
             </div>
             
-            <Table columns={columns} data={cart.map((item, index) => ({ ...item, index }))} />
+            <Table columns={columns} data={cart} />
 
             <div className="mt-6 flex justify-end gap-4">
               <Button variant="secondary" onClick={() => setCart([])}>

@@ -1,4 +1,4 @@
-import type { Unit, OrderLine, Allocation, Currency } from '../types';
+import type { Unit, OrderLine, Allocation } from '../types';
 
 // Constants
 export const TONS_IN_CONTAINER_DEFAULT = 26;

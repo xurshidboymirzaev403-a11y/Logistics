@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { Table } from '../components/ui/Table';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { auditLogStore, userStore } from '../store';
 import { formatDateTime } from '../utils/helpers';
-import type { AuditLog } from '../types';
 
 export function AuditPage() {
   const [logs] = useState(auditLogStore.getAll());
