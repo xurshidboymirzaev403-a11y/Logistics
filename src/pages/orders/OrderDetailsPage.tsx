@@ -92,6 +92,12 @@ export function OrderDetailsPage() {
   ];
 
   const totalTons = orderLines.reduce((sum, line) => sum + line.quantityInTons, 0);
+  
+  // Calculate container counts once
+  const containerCounts = hasContainerIndexes ? {
+    count26t: groupedContainers.filter(c => c.capacity === 26).length,
+    count27t: groupedContainers.filter(c => c.capacity === 27).length,
+  } : { count26t: 0, count27t: 0 };
 
   return (
     <Layout>
@@ -241,15 +247,11 @@ export function OrderDetailsPage() {
               </div>
               <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                 <p className="text-sm opacity-90 mb-1">Контейнеры 26т</p>
-                <p className="text-2xl font-bold">
-                  {groupedContainers.filter(c => c.capacity === 26).length} шт.
-                </p>
+                <p className="text-2xl font-bold">{containerCounts.count26t} шт.</p>
               </div>
               <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                 <p className="text-sm opacity-90 mb-1">Контейнеры 27т</p>
-                <p className="text-2xl font-bold">
-                  {groupedContainers.filter(c => c.capacity === 27).length} шт.
-                </p>
+                <p className="text-2xl font-bold">{containerCounts.count27t} шт.</p>
               </div>
             </div>
           </div>

@@ -7,7 +7,7 @@ import { Input } from '../../components/ui/Input';
 import { showToast } from '../../components/ui/Toast';
 import { orderStore, orderLineStore, itemStore, currentUserStore, auditLogStore } from '../../store';
 import { toTons, formatNumber, TONS_IN_CONTAINER_DEFAULT, TONS_IN_CONTAINER_EXCEPTION } from '../../utils/helpers';
-import type { Unit } from '../../types';
+import type { Unit, Item } from '../../types';
 
 interface ContainerItem {
   itemId: string;
@@ -331,7 +331,7 @@ export function CreateOrderPage() {
 // Container Card Component
 interface ContainerCardProps {
   container: Container;
-  items: any[];
+  items: Item[];
   onAddItem: (containerId: number, itemId: string, quantity: number, unit: Unit) => void;
   onEditItem: (containerId: number, itemIndex: number, itemId: string, quantity: number, unit: Unit) => void;
   onDeleteItem: (containerId: number, itemIndex: number) => void;
