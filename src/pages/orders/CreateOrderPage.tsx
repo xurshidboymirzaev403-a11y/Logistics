@@ -25,13 +25,11 @@ export function CreateOrderPage() {
   const [selectedItemId, setSelectedItemId] = useState('');
   const [tons, setTons] = useState('');
   const [containers, setContainers] = useState('');
-  const [lastEditedField, setLastEditedField] = useState<'tons' | 'containers'>('tons');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   // Handle tons input change
   const handleTonsChange = (value: string) => {
     setTons(value);
-    setLastEditedField('tons');
     
     const tonsValue = parseFloat(value);
     if (!isNaN(tonsValue) && tonsValue >= 0) {
@@ -45,7 +43,6 @@ export function CreateOrderPage() {
   // Handle containers input change
   const handleContainersChange = (value: string) => {
     setContainers(value);
-    setLastEditedField('containers');
     
     const containersValue = parseFloat(value);
     if (!isNaN(containersValue) && containersValue >= 0) {
@@ -97,7 +94,6 @@ export function CreateOrderPage() {
     setSelectedItemId('');
     setTons('');
     setContainers('');
-    setLastEditedField('tons');
   };
 
   // Edit item in cart
@@ -121,7 +117,6 @@ export function CreateOrderPage() {
     setTons('');
     setContainers('');
     setEditingIndex(null);
-    setLastEditedField('tons');
   };
 
   // Save order
