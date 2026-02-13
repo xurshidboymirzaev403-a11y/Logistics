@@ -6,13 +6,12 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { showToast } from '../../components/ui/Toast';
 import { orderStore, orderLineStore, itemStore, currentUserStore, auditLogStore } from '../../store';
-import { formatNumber, TONS_IN_CONTAINER_DEFAULT, TONS_IN_CONTAINER_EXCEPTION } from '../../utils/helpers';
+import { formatNumber } from '../../utils/helpers';
 
 interface CartItem {
   itemId: string;
   tons: number;
   containers: number;
-  containerSize: number; // 26 or 27
 }
 
 export function CreateOrderPage() {
@@ -26,7 +25,6 @@ export function CreateOrderPage() {
   const [selectedItemId, setSelectedItemId] = useState('');
   const [tons, setTons] = useState('');
   const [containers, setContainers] = useState('');
-  const [containerSize, setContainerSize] = useState<number>(TONS_IN_CONTAINER_DEFAULT);
   const [lastEditedField, setLastEditedField] = useState<'tons' | 'containers'>('tons');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
@@ -37,7 +35,7 @@ export function CreateOrderPage() {
     
     const tonsValue = parseFloat(value);
     if (!isNaN(tonsValue) && tonsValue >= 0) {
-      const containersValue = tonsValue / containerSize;
+      const containersValue = tonsValue / 28;
       setContainers(formatNumber(containersValue));
     } else {
       setContainers('');
@@ -51,30 +49,10 @@ export function CreateOrderPage() {
     
     const containersValue = parseFloat(value);
     if (!isNaN(containersValue) && containersValue >= 0) {
-      const tonsValue = containersValue * containerSize;
+      const tonsValue = containersValue * 28;
       setTons(formatNumber(tonsValue));
     } else {
       setTons('');
-    }
-  };
-
-  // Handle container size toggle
-  const handleContainerSizeChange = (newSize: number) => {
-    setContainerSize(newSize);
-    
-    // Recalculate based on last edited field
-    if (lastEditedField === 'tons') {
-      const tonsValue = parseFloat(tons);
-      if (!isNaN(tonsValue) && tonsValue >= 0) {
-        const containersValue = tonsValue / newSize;
-        setContainers(formatNumber(containersValue));
-      }
-    } else {
-      const containersValue = parseFloat(containers);
-      if (!isNaN(containersValue) && containersValue >= 0) {
-        const tonsValue = containersValue * newSize;
-        setTons(formatNumber(tonsValue));
-      }
     }
   };
 
@@ -102,7 +80,6 @@ export function CreateOrderPage() {
       itemId: selectedItemId,
       tons: tonsValue,
       containers: containersValue,
-      containerSize,
     };
 
     if (editingIndex !== null) {
@@ -120,7 +97,6 @@ export function CreateOrderPage() {
     setSelectedItemId('');
     setTons('');
     setContainers('');
-    setContainerSize(TONS_IN_CONTAINER_DEFAULT);
     setLastEditedField('tons');
   };
 
@@ -130,7 +106,6 @@ export function CreateOrderPage() {
     setSelectedItemId(item.itemId);
     setTons(formatNumber(item.tons));
     setContainers(formatNumber(item.containers));
-    setContainerSize(item.containerSize);
     setEditingIndex(index);
   };
 
@@ -145,7 +120,6 @@ export function CreateOrderPage() {
     setSelectedItemId('');
     setTons('');
     setContainers('');
-    setContainerSize(TONS_IN_CONTAINER_DEFAULT);
     setEditingIndex(null);
     setLastEditedField('tons');
   };
@@ -178,7 +152,7 @@ export function CreateOrderPage() {
         quantity: item.tons, // Save tons as quantity
         unit: 'т', // Always save as tons for backward compatibility
         quantityInTons: item.tons,
-        containerSize: item.containerSize,
+        containerSize: 28,
       });
     });
 
@@ -223,7 +197,7 @@ export function CreateOrderPage() {
             <span className="text-2xl">➕</span>
             {editingIndex !== null ? 'Редактирование позиции' : 'Добавление позиции'}
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
             {/* Position Select */}
             <div className="md:col-span-4">
               <Select
@@ -238,9 +212,9 @@ export function CreateOrderPage() {
             </div>
 
             {/* Tons Input */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <Input
-                label="Количество в тоннах"
+                label="Тонны"
                 type="number"
                 step="0.001"
                 value={tons}
@@ -250,9 +224,9 @@ export function CreateOrderPage() {
             </div>
 
             {/* Containers Input */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <Input
-                label="Количество в контейнерах"
+                label="Контейнеры"
                 type="number"
                 step="0.001"
                 value={containers}
@@ -261,39 +235,8 @@ export function CreateOrderPage() {
               />
             </div>
 
-            {/* Container Size Toggle */}
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Размер контейнера
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleContainerSizeChange(TONS_IN_CONTAINER_DEFAULT)}
-                  className={`flex-1 py-2 px-3 rounded-lg font-semibold transition-all duration-200 ${
-                    containerSize === TONS_IN_CONTAINER_DEFAULT
-                      ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  26т
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleContainerSizeChange(TONS_IN_CONTAINER_EXCEPTION)}
-                  className={`flex-1 py-2 px-3 rounded-lg font-semibold transition-all duration-200 ${
-                    containerSize === TONS_IN_CONTAINER_EXCEPTION
-                      ? 'bg-orange-500 text-white shadow-lg transform scale-105'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  27т
-                </button>
-              </div>
-            </div>
-
             {/* Action Buttons */}
-            <div className="md:col-span-2 flex items-end gap-2">
+            <div className="md:col-span-2 flex gap-2">
               <Button
                 onClick={handleAddItem}
                 className={`flex-1 ${
@@ -333,7 +276,6 @@ export function CreateOrderPage() {
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Позиция</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Тонны</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Контейнеры</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Размер конт.</th>
                     <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Действия</th>
                   </tr>
                 </thead>
@@ -348,15 +290,6 @@ export function CreateOrderPage() {
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                           {formatNumber(item.containers)} конт.
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                            item.containerSize === TONS_IN_CONTAINER_EXCEPTION
-                              ? 'bg-orange-100 text-orange-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {item.containerSize}т
-                          </span>
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex justify-center gap-3">
