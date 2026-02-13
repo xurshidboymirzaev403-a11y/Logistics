@@ -191,7 +191,7 @@ export function CreateOrderPage() {
       details: { 
         orderNumber: order.orderNumber, 
         linesCount: cart.length,
-        totalTons: totals.totalWeight,
+        totalTons: totals.totalTons,
         totalContainers: totals.totalContainers,
       },
     });
@@ -202,7 +202,7 @@ export function CreateOrderPage() {
 
   // Calculate totals
   const totals = {
-    totalWeight: cart.reduce((sum, item) => sum + item.tons, 0),
+    totalTons: cart.reduce((sum, item) => sum + item.tons, 0),
     totalContainers: cart.reduce((sum, item) => sum + item.containers, 0),
     totalItems: cart.length,
   };
@@ -405,7 +405,7 @@ export function CreateOrderPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                   <p className="text-sm opacity-90 mb-1">Общий вес</p>
-                  <p className="text-2xl font-bold">{formatNumber(totals.totalWeight)} т</p>
+                  <p className="text-2xl font-bold">{formatNumber(totals.totalTons)} т</p>
                 </div>
                 <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                   <p className="text-sm opacity-90 mb-1">Контейнеры</p>
