@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { currentUserStore, adminModeStore } from '../../store';
+import { REFERENCES_TABS } from '../../constants/references';
 
 interface SidebarProps {
   onLogout: () => void;
@@ -9,6 +10,7 @@ interface SidebarProps {
 export function Sidebar({ onLogout }: SidebarProps) {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isReferencesOpen, setIsReferencesOpen] = useState(false);
   const currentUser = currentUserStore.get();
   const isAdminMode = adminModeStore.get();
 
@@ -17,7 +19,6 @@ export function Sidebar({ onLogout }: SidebarProps) {
     { path: '/orders', icon: '📦', label: 'Заказы' },
     { path: '/distribution', icon: '🚚', label: 'Распределение' },
     { path: '/finance', icon: '💰', label: 'Финансы' },
-    { path: '/references', icon: '📚', label: 'Справочники' },
     { path: '/admin', icon: '🔧', label: 'Админ' },
     { path: '/audit', icon: '📋', label: 'Аудит' },
   ];
@@ -28,6 +29,13 @@ export function Sidebar({ onLogout }: SidebarProps) {
     }
     return location.pathname.startsWith(path);
   };
+
+  // Auto-expand References submenu when on a references page
+  useEffect(() => {
+    if (location.pathname.startsWith('/references')) {
+      setIsReferencesOpen(true);
+    }
+  }, [location.pathname]);
 
   return (
     <>
@@ -89,6 +97,54 @@ export function Sidebar({ onLogout }: SidebarProps) {
                 <span className="font-medium">{item.label}</span>
               </Link>
             ))}
+            
+            {/* References Section with Submenu */}
+            <div className="mb-2">
+              <button
+                onClick={() => setIsReferencesOpen(!isReferencesOpen)}
+                aria-label={`Справочники ${isReferencesOpen ? 'свернуть' : 'развернуть'}`}
+                className={`
+                  w-full flex items-center gap-3 px-4 py-3 rounded-lg
+                  transition-colors duration-200
+                  ${
+                    location.pathname.startsWith('/references')
+                      ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }
+                `}
+              >
+                <span className="text-xl">📚</span>
+                <span className="font-medium flex-1 text-left">Справочники</span>
+                <span className={`transform transition-transform duration-200 ${isReferencesOpen ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              
+              {/* Submenu */}
+              {isReferencesOpen && (
+                <div className="ml-6 mt-1">
+                  {REFERENCES_TABS.map((subItem) => (
+                    <Link
+                      key={subItem.path}
+                      to={subItem.path}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`
+                        flex items-center gap-2 px-4 py-2 rounded-lg mb-1
+                        transition-colors duration-200
+                        ${
+                          location.pathname === subItem.path
+                            ? 'bg-blue-100 text-blue-700 font-medium'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
+                        }
+                      `}
+                    >
+                      <span className="text-base">{subItem.icon}</span>
+                      <span className="text-sm">{subItem.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </nav>
 
           {/* Admin mode indicator */}

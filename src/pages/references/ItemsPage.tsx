@@ -6,6 +6,7 @@ import { Select } from '../../components/ui/Select';
 import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import { showToast } from '../../components/ui/Toast';
+import { ReferencesTabs } from '../../components/references/ReferencesTabs';
 import { itemStore, auditLogStore, currentUserStore, adminModeStore } from '../../store';
 import type { Item, Unit } from '../../types';
 
@@ -158,6 +159,7 @@ export function ItemsPage() {
   return (
     <Layout>
       <div>
+        <ReferencesTabs />
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Позиции (Номенклатура)</h1>
           <Button onClick={() => handleOpenModal()}>
