@@ -18,8 +18,7 @@ import {
   toTons, 
   formatNumber, 
   validateDistribution, 
-  TONS_IN_CONTAINER_DEFAULT,
-  TONS_IN_CONTAINER_EXCEPTION 
+  TONS_IN_CONTAINER_DEFAULT
 } from '../../utils/helpers';
 import { formatCurrency } from '../../utils/format';
 import type { Order, OrderLine, Allocation, Unit, Currency } from '../../types';
@@ -313,24 +312,9 @@ export function DistributionPage() {
                           <button
                             type="button"
                             onClick={() => setNewAllocation({ ...newAllocation, containerSize: TONS_IN_CONTAINER_DEFAULT })}
-                            className={`flex-1 px-2 py-2 rounded text-xs ${
-                              newAllocation.containerSize === TONS_IN_CONTAINER_DEFAULT
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-200 text-gray-700'
-                            }`}
+                            className="flex-1 px-2 py-2 rounded text-xs bg-blue-600 text-white"
                           >
-                            26т
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewAllocation({ ...newAllocation, containerSize: TONS_IN_CONTAINER_EXCEPTION })}
-                            className={`flex-1 px-2 py-2 rounded text-xs ${
-                              newAllocation.containerSize === TONS_IN_CONTAINER_EXCEPTION
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-200 text-gray-700'
-                            }`}
-                          >
-                            27т
+                            28т
                           </button>
                         </div>
                       </div>

@@ -4,7 +4,7 @@ import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore, itemStore } from '../../store';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT, TONS_IN_CONTAINER_EXCEPTION } from '../../utils/helpers';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT } from '../../utils/helpers';
 import type { Order, OrderLine } from '../../types';
 
 interface GroupedContainer {
@@ -155,14 +155,9 @@ export function OrderDetailsPage() {
                 return (
                   <div key={container.index} className="bg-white rounded-lg shadow-md overflow-hidden border-2 border-gray-200">
                     {/* Container Header */}
-                    <div className={`p-4 ${
-                      container.capacity === TONS_IN_CONTAINER_EXCEPTION
-                        ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
-                        : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
-                    }`}>
+                    <div className="p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white">
                       <h3 className="text-lg font-bold flex items-center gap-2">
                         📦 Контейнер #{container.index + 1} ({container.capacity}т)
-                        {container.capacity === TONS_IN_CONTAINER_EXCEPTION && <span className="text-xl">⚠️</span>}
                       </h3>
                     </div>
 

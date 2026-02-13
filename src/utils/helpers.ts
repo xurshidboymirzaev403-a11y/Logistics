@@ -1,8 +1,7 @@
 import type { Unit, OrderLine, Allocation } from '../types';
 
 // Constants
-export const TONS_IN_CONTAINER_DEFAULT = 26;
-export const TONS_IN_CONTAINER_EXCEPTION = 27;
+export const TONS_IN_CONTAINER_DEFAULT = 28;
 export const KG_IN_TON = 1000;
 
 // Convert any unit to tons
