@@ -47,6 +47,7 @@ export interface OrderLine {
   unit: Unit;
   quantityInTons: number;
   containerSize?: number;
+  containerIndex?: number; // Index of container within the order (for container-based loading)
 }
 
 // Allocation types
