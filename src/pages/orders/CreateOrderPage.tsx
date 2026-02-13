@@ -6,20 +6,13 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { showToast } from '../../components/ui/Toast';
 import { orderStore, orderLineStore, itemStore, currentUserStore, auditLogStore } from '../../store';
-import { toTons, formatNumber, TONS_IN_CONTAINER_DEFAULT, TONS_IN_CONTAINER_EXCEPTION } from '../../utils/helpers';
-import type { Unit, Item } from '../../types';
+import { formatNumber, TONS_IN_CONTAINER_DEFAULT, TONS_IN_CONTAINER_EXCEPTION } from '../../utils/helpers';
 
-interface ContainerItem {
+interface CartItem {
   itemId: string;
-  quantity: number;
-  unit: Unit;
-  quantityInTons: number;
-}
-
-interface Container {
-  id: number;
-  capacity: number; // 26 or 27
-  items: ContainerItem[];
+  tons: number;
+  containers: number;
+  containerSize: number; // 26 or 27
 }
 
 export function CreateOrderPage() {
@@ -27,145 +20,140 @@ export function CreateOrderPage() {
   const items = itemStore.getAll();
   const currentUser = currentUserStore.get();
 
-  const [containers, setContainers] = useState<Container[]>([]);
-  const [nextContainerId, setNextContainerId] = useState(1);
+  const [cart, setCart] = useState<CartItem[]>([]);
 
-  // Add container
-  const handleAddContainer = (capacity: number) => {
-    const newContainer: Container = {
-      id: nextContainerId,
-      capacity,
-      items: [],
-    };
-    setContainers([...containers, newContainer]);
-    setNextContainerId(nextContainerId + 1);
-    showToast('success', `Контейнер #${nextContainerId} (${capacity}т) добавлен`);
+  // Form state
+  const [selectedItemId, setSelectedItemId] = useState('');
+  const [tons, setTons] = useState('');
+  const [containers, setContainers] = useState('');
+  const [containerSize, setContainerSize] = useState<number>(TONS_IN_CONTAINER_DEFAULT);
+  const [lastEditedField, setLastEditedField] = useState<'tons' | 'containers'>('tons');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  // Handle tons input change
+  const handleTonsChange = (value: string) => {
+    setTons(value);
+    setLastEditedField('tons');
+    
+    const tonsValue = parseFloat(value);
+    if (!isNaN(tonsValue) && tonsValue >= 0) {
+      const containersValue = tonsValue / containerSize;
+      setContainers(formatNumber(containersValue));
+    } else {
+      setContainers('');
+    }
   };
 
-  // Delete container
-  const handleDeleteContainer = (containerId: number) => {
-    const container = containers.find(c => c.id === containerId);
-    if (!container) return;
+  // Handle containers input change
+  const handleContainersChange = (value: string) => {
+    setContainers(value);
+    setLastEditedField('containers');
+    
+    const containersValue = parseFloat(value);
+    if (!isNaN(containersValue) && containersValue >= 0) {
+      const tonsValue = containersValue * containerSize;
+      setTons(formatNumber(tonsValue));
+    } else {
+      setTons('');
+    }
+  };
 
-    if (container.items.length > 0) {
-      if (!window.confirm(`Контейнер #${containerId} содержит ${container.items.length} поз. Удалить?`)) {
-        return;
+  // Handle container size toggle
+  const handleContainerSizeChange = (newSize: number) => {
+    setContainerSize(newSize);
+    
+    // Recalculate based on last edited field
+    if (lastEditedField === 'tons') {
+      const tonsValue = parseFloat(tons);
+      if (!isNaN(tonsValue) && tonsValue >= 0) {
+        const containersValue = tonsValue / newSize;
+        setContainers(formatNumber(containersValue));
+      }
+    } else {
+      const containersValue = parseFloat(containers);
+      if (!isNaN(containersValue) && containersValue >= 0) {
+        const tonsValue = containersValue * newSize;
+        setTons(formatNumber(tonsValue));
       }
     }
-
-    setContainers(containers.filter(c => c.id !== containerId));
-    showToast('success', `Контейнер #${containerId} удалён`);
   };
 
-  // Add item to container
-  const handleAddItemToContainer = (
-    containerId: number,
-    itemId: string,
-    quantity: number,
-    unit: Unit
-  ) => {
-    const container = containers.find(c => c.id === containerId);
-    if (!container) return;
-
-    const quantityInTons = toTons(quantity, unit, container.capacity);
-    const currentLoad = container.items.reduce((sum, item) => sum + item.quantityInTons, 0);
-    const newLoad = currentLoad + quantityInTons;
-
-    // Validation: check capacity
-    if (newLoad > container.capacity) {
-      showToast('error', `Перегруз! Осталось: ${formatNumber(container.capacity - currentLoad)} т`);
+  // Add item to cart
+  const handleAddItem = () => {
+    if (!selectedItemId) {
+      showToast('warning', 'Выберите позицию');
       return;
     }
 
-    // Warning at 80%
-    if (newLoad > container.capacity * 0.8 && currentLoad <= container.capacity * 0.8) {
-      showToast('warning', `Внимание: заполнение превышает 80%`);
-    }
+    const tonsValue = parseFloat(tons);
+    const containersValue = parseFloat(containers);
 
-    const newItem: ContainerItem = {
-      itemId,
-      quantity,
-      unit,
-      quantityInTons,
-    };
-
-    const updatedContainers = containers.map(c => {
-      if (c.id === containerId) {
-        return { ...c, items: [...c.items, newItem] };
-      }
-      return c;
-    });
-
-    setContainers(updatedContainers);
-    showToast('success', 'Позиция добавлена в контейнер');
-  };
-
-  // Edit item in container
-  const handleEditItemInContainer = (
-    containerId: number,
-    itemIndex: number,
-    itemId: string,
-    quantity: number,
-    unit: Unit
-  ) => {
-    const container = containers.find(c => c.id === containerId);
-    if (!container) return;
-
-    const quantityInTons = toTons(quantity, unit, container.capacity);
-    const currentLoad = container.items.reduce((sum, item, idx) => {
-      if (idx === itemIndex) return sum; // Exclude the item being edited
-      return sum + item.quantityInTons;
-    }, 0);
-    const newLoad = currentLoad + quantityInTons;
-
-    // Validation: check capacity
-    if (newLoad > container.capacity) {
-      showToast('error', `Перегруз! Осталось: ${formatNumber(container.capacity - currentLoad)} т`);
+    if (isNaN(tonsValue) || tonsValue <= 0) {
+      showToast('error', 'Введите корректное количество в тоннах');
       return;
     }
 
-    const updatedContainers = containers.map(c => {
-      if (c.id === containerId) {
-        const updatedItems = [...c.items];
-        updatedItems[itemIndex] = {
-          itemId,
-          quantity,
-          unit,
-          quantityInTons,
-        };
-        return { ...c, items: updatedItems };
-      }
-      return c;
-    });
+    if (isNaN(containersValue) || containersValue <= 0) {
+      showToast('error', 'Введите корректное количество в контейнерах');
+      return;
+    }
 
-    setContainers(updatedContainers);
-    showToast('success', 'Позиция обновлена');
+    const newItem: CartItem = {
+      itemId: selectedItemId,
+      tons: tonsValue,
+      containers: containersValue,
+      containerSize,
+    };
+
+    if (editingIndex !== null) {
+      const updatedCart = [...cart];
+      updatedCart[editingIndex] = newItem;
+      setCart(updatedCart);
+      showToast('success', 'Позиция обновлена');
+      setEditingIndex(null);
+    } else {
+      setCart([...cart, newItem]);
+      showToast('success', 'Позиция добавлена в корзину');
+    }
+
+    // Reset form
+    setSelectedItemId('');
+    setTons('');
+    setContainers('');
+    setContainerSize(TONS_IN_CONTAINER_DEFAULT);
+    setLastEditedField('tons');
   };
 
-  // Delete item from container
-  const handleDeleteItemFromContainer = (containerId: number, itemIndex: number) => {
-    const updatedContainers = containers.map(c => {
-      if (c.id === containerId) {
-        return { ...c, items: c.items.filter((_, idx) => idx !== itemIndex) };
-      }
-      return c;
-    });
+  // Edit item in cart
+  const handleEditItem = (index: number) => {
+    const item = cart[index];
+    setSelectedItemId(item.itemId);
+    setTons(formatNumber(item.tons));
+    setContainers(formatNumber(item.containers));
+    setContainerSize(item.containerSize);
+    setEditingIndex(index);
+  };
 
-    setContainers(updatedContainers);
+  // Delete item from cart
+  const handleDeleteItem = (index: number) => {
+    setCart(cart.filter((_, idx) => idx !== index));
     showToast('success', 'Позиция удалена');
+  };
+
+  // Cancel edit
+  const handleCancelEdit = () => {
+    setSelectedItemId('');
+    setTons('');
+    setContainers('');
+    setContainerSize(TONS_IN_CONTAINER_DEFAULT);
+    setEditingIndex(null);
+    setLastEditedField('tons');
   };
 
   // Save order
   const handleSave = () => {
-    if (containers.length === 0) {
-      showToast('warning', 'Добавьте хотя бы один контейнер');
-      return;
-    }
-
-    // Check for empty containers
-    const emptyContainers = containers.filter(c => c.items.length === 0);
-    if (emptyContainers.length > 0) {
-      showToast('error', `Нельзя сохранить заказ с пустыми контейнерами (Контейнер #${emptyContainers[0].id})`);
+    if (cart.length === 0) {
+      showToast('warning', 'Добавьте хотя бы одну позицию в корзину');
       return;
     }
 
@@ -182,23 +170,19 @@ export function CreateOrderPage() {
       status: 'locked',
     });
 
-    // Create order lines with container index
-    containers.forEach((container, containerIdx) => {
-      container.items.forEach(item => {
-        orderLineStore.create({
-          orderId: order.id,
-          itemId: item.itemId,
-          quantity: item.quantity,
-          unit: item.unit,
-          quantityInTons: item.quantityInTons,
-          containerSize: container.capacity,
-          containerIndex: containerIdx, // Add container index for grouping
-        });
+    // Create order lines
+    cart.forEach(item => {
+      orderLineStore.create({
+        orderId: order.id,
+        itemId: item.itemId,
+        quantity: item.tons, // Save tons as quantity
+        unit: 'т', // Always save as tons for backward compatibility
+        quantityInTons: item.tons,
+        containerSize: item.containerSize,
       });
     });
 
     // Log audit
-    const totalItems = containers.reduce((sum, c) => sum + c.items.length, 0);
     auditLogStore.create({
       action: 'CREATE',
       entityType: 'Order',
@@ -206,8 +190,9 @@ export function CreateOrderPage() {
       userId: currentUser.id,
       details: { 
         orderNumber: order.orderNumber, 
-        containersCount: containers.length,
-        linesCount: totalItems,
+        linesCount: cart.length,
+        totalTons: totals.totalWeight,
+        totalContainers: totals.totalContainers,
       },
     });
 
@@ -217,18 +202,9 @@ export function CreateOrderPage() {
 
   // Calculate totals
   const totals = {
-    totalContainers: containers.length,
-    totalWeight: containers.reduce((sum, c) => 
-      sum + c.items.reduce((itemSum, item) => itemSum + item.quantityInTons, 0), 0
-    ),
-    containers26t: containers.filter(c => c.capacity === 26).length,
-    containers27t: containers.filter(c => c.capacity === 27).length,
-    averageUtilization: containers.length > 0
-      ? containers.reduce((sum, c) => {
-          const load = c.items.reduce((itemSum, item) => itemSum + item.quantityInTons, 0);
-          return sum + (load / c.capacity) * 100;
-        }, 0) / containers.length
-      : 0,
+    totalWeight: cart.reduce((sum, item) => sum + item.tons, 0),
+    totalContainers: cart.reduce((sum, item) => sum + item.containers, 0),
+    totalItems: cart.length,
   };
 
   return (
@@ -241,74 +217,203 @@ export function CreateOrderPage() {
           </Button>
         </div>
 
-        {/* Add Container Buttons */}
-        <div className="flex gap-4 mb-6">
-          <Button
-            onClick={() => handleAddContainer(TONS_IN_CONTAINER_DEFAULT)}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 shadow-lg transform hover:scale-105 transition-all duration-200"
-          >
-            ➕ Добавить контейнер 26т
-          </Button>
-          <Button
-            onClick={() => handleAddContainer(TONS_IN_CONTAINER_EXCEPTION)}
-            className="flex-1 bg-orange-500 hover:bg-orange-600 shadow-lg transform hover:scale-105 transition-all duration-200"
-          >
-            ⚠️ Добавить контейнер 27т
-          </Button>
+        {/* Add Item Form */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6 border-2 border-gray-200">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <span className="text-2xl">➕</span>
+            {editingIndex !== null ? 'Редактирование позиции' : 'Добавление позиции'}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            {/* Position Select */}
+            <div className="md:col-span-4">
+              <Select
+                label="Позиция"
+                value={selectedItemId}
+                onChange={(e) => setSelectedItemId(e.target.value)}
+                options={[
+                  { value: '', label: 'Выберите позицию' },
+                  ...items.map(item => ({ value: item.id, label: item.name })),
+                ]}
+              />
+            </div>
+
+            {/* Tons Input */}
+            <div className="md:col-span-2">
+              <Input
+                label="Количество в тоннах"
+                type="number"
+                step="0.001"
+                value={tons}
+                onChange={(e) => handleTonsChange(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+
+            {/* Containers Input */}
+            <div className="md:col-span-2">
+              <Input
+                label="Количество в контейнерах"
+                type="number"
+                step="0.001"
+                value={containers}
+                onChange={(e) => handleContainersChange(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+
+            {/* Container Size Toggle */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Размер контейнера
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleContainerSizeChange(TONS_IN_CONTAINER_DEFAULT)}
+                  className={`flex-1 py-2 px-3 rounded-lg font-semibold transition-all duration-200 ${
+                    containerSize === TONS_IN_CONTAINER_DEFAULT
+                      ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  26т
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleContainerSizeChange(TONS_IN_CONTAINER_EXCEPTION)}
+                  className={`flex-1 py-2 px-3 rounded-lg font-semibold transition-all duration-200 ${
+                    containerSize === TONS_IN_CONTAINER_EXCEPTION
+                      ? 'bg-orange-500 text-white shadow-lg transform scale-105'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  27т
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="md:col-span-2 flex items-end gap-2">
+              <Button
+                onClick={handleAddItem}
+                className={`flex-1 ${
+                  editingIndex !== null
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
+              >
+                {editingIndex !== null ? '🔄 Обновить' : '➕ Добавить'}
+              </Button>
+              {editingIndex !== null && (
+                <Button
+                  onClick={handleCancelEdit}
+                  variant="secondary"
+                  className="bg-gray-200 hover:bg-gray-300"
+                >
+                  ✖️
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Container Cards */}
-        <div className="space-y-6 mb-6">
-          {containers.map(container => (
-            <ContainerCard
-              key={container.id}
-              container={container}
-              items={items}
-              onAddItem={handleAddItemToContainer}
-              onEditItem={handleEditItemInContainer}
-              onDeleteItem={handleDeleteItemFromContainer}
-              onDeleteContainer={handleDeleteContainer}
-            />
-          ))}
-        </div>
+        {/* Cart Table */}
+        {cart.length > 0 && (
+          <div className="bg-white rounded-lg shadow-md overflow-hidden mb-6 border-2 border-gray-200">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-4 text-white">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <span className="text-2xl">🛒</span>
+                Корзина ({cart.length} поз.)
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-100 border-b-2 border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Позиция</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Тонны</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Контейнеры</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Размер конт.</th>
+                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {cart.map((item, index) => {
+                    const itemData = itemStore.getById(item.itemId);
+                    return (
+                      <tr key={index} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-gray-900">{itemData?.name || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                          {formatNumber(item.tons)} т
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                          {formatNumber(item.containers)} конт.
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
+                            item.containerSize === TONS_IN_CONTAINER_EXCEPTION
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {item.containerSize}т
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex justify-center gap-3">
+                            <button
+                              onClick={() => handleEditItem(index)}
+                              className="text-blue-600 hover:text-blue-800 transition-colors text-lg"
+                              title="Редактировать"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(index)}
+                              className="text-red-600 hover:text-red-800 transition-colors text-lg"
+                              title="Удалить"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Empty State */}
-        {containers.length === 0 && (
-          <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
-            <p className="text-2xl mb-2">📦</p>
-            <p className="text-gray-600 mb-4">Нет контейнеров</p>
-            <p className="text-sm text-gray-500">Добавьте контейнер, чтобы начать формирование заказа</p>
+        {cart.length === 0 && (
+          <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-12 text-center mb-6">
+            <p className="text-2xl mb-2">🛒</p>
+            <p className="text-gray-600 mb-4">Корзина пуста</p>
+            <p className="text-sm text-gray-500">Добавьте позиции в корзину, чтобы создать заказ</p>
           </div>
         )}
 
         {/* Summary */}
-        {containers.length > 0 && (
+        {cart.length > 0 && (
           <>
             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg shadow-lg p-6 text-white mb-6">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <span className="text-2xl">📊</span>
                 Итого по заказу
               </h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-sm opacity-90 mb-1">Всего контейнеров</p>
-                  <p className="text-2xl font-bold">{totals.totalContainers}</p>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                   <p className="text-sm opacity-90 mb-1">Общий вес</p>
                   <p className="text-2xl font-bold">{formatNumber(totals.totalWeight)} т</p>
                 </div>
                 <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-sm opacity-90 mb-1">Контейнеры 26т</p>
-                  <p className="text-2xl font-bold">{totals.containers26t} шт.</p>
+                  <p className="text-sm opacity-90 mb-1">Контейнеры</p>
+                  <p className="text-2xl font-bold">{formatNumber(totals.totalContainers)} конт.</p>
                 </div>
                 <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-sm opacity-90 mb-1">Контейнеры 27т</p>
-                  <p className="text-2xl font-bold">{totals.containers27t} шт.</p>
-                </div>
-                <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-sm opacity-90 mb-1">Средняя загрузка</p>
-                  <p className="text-2xl font-bold">{formatNumber(totals.averageUtilization)}%</p>
+                  <p className="text-sm opacity-90 mb-1">Позиций</p>
+                  <p className="text-2xl font-bold">{totals.totalItems} шт.</p>
                 </div>
               </div>
             </div>
@@ -325,241 +430,5 @@ export function CreateOrderPage() {
         )}
       </div>
     </Layout>
-  );
-}
-
-// Container Card Component
-interface ContainerCardProps {
-  container: Container;
-  items: Item[];
-  onAddItem: (containerId: number, itemId: string, quantity: number, unit: Unit) => void;
-  onEditItem: (containerId: number, itemIndex: number, itemId: string, quantity: number, unit: Unit) => void;
-  onDeleteItem: (containerId: number, itemIndex: number) => void;
-  onDeleteContainer: (containerId: number) => void;
-}
-
-function ContainerCard({
-  container,
-  items,
-  onAddItem,
-  onEditItem,
-  onDeleteItem,
-  onDeleteContainer,
-}: ContainerCardProps) {
-  const [selectedItemId, setSelectedItemId] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState<Unit>('т');
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-
-  const currentLoad = container.items.reduce((sum, item) => sum + item.quantityInTons, 0);
-  const remaining = container.capacity - currentLoad;
-  const percentage = (currentLoad / container.capacity) * 100;
-
-  // Progress bar color
-  const getProgressBarColor = () => {
-    if (percentage > 100) return 'bg-red-500';
-    if (percentage >= 80) return 'bg-yellow-500';
-    return 'bg-green-500';
-  };
-
-  const handleAdd = () => {
-    if (!selectedItemId || !quantity) {
-      showToast('warning', 'Выберите позицию и введите количество');
-      return;
-    }
-
-    const qty = parseFloat(quantity);
-    if (isNaN(qty) || qty <= 0) {
-      showToast('error', 'Введите корректное количество');
-      return;
-    }
-
-    if (editingIndex !== null) {
-      onEditItem(container.id, editingIndex, selectedItemId, qty, unit);
-      setEditingIndex(null);
-    } else {
-      onAddItem(container.id, selectedItemId, qty, unit);
-    }
-
-    // Reset form
-    setSelectedItemId('');
-    setQuantity('');
-    setUnit('т');
-  };
-
-  const handleEdit = (index: number) => {
-    const item = container.items[index];
-    setSelectedItemId(item.itemId);
-    setQuantity(item.quantity.toString());
-    setUnit(item.unit);
-    setEditingIndex(index);
-  };
-
-  const handleCancelEdit = () => {
-    setSelectedItemId('');
-    setQuantity('');
-    setUnit('т');
-    setEditingIndex(null);
-  };
-
-  return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden border-2 border-gray-200">
-      {/* Header */}
-      <div className={`p-4 flex justify-between items-center ${
-        container.capacity === TONS_IN_CONTAINER_EXCEPTION
-          ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
-          : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
-      }`}>
-        <h3 className="text-xl font-bold flex items-center gap-2">
-          📦 Контейнер #{container.id} ({container.capacity}т)
-          {container.capacity === TONS_IN_CONTAINER_EXCEPTION && <span className="text-2xl">⚠️</span>}
-        </h3>
-        <button
-          onClick={() => onDeleteContainer(container.id)}
-          className="text-white hover:text-red-200 transition-colors text-2xl"
-          title="Удалить контейнер"
-        >
-          🗑️
-        </button>
-      </div>
-
-      {/* Progress Bar */}
-      <div className="p-4 bg-gray-50">
-        <div className="mb-2">
-          <div className="h-6 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className={`h-full ${getProgressBarColor()} transition-all duration-500 ease-out flex items-center justify-center text-xs font-bold text-white`}
-              style={{ width: `${Math.min(percentage, 100)}%` }}
-            >
-              {percentage > 5 && `${formatNumber(percentage)}%`}
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="font-semibold text-gray-700">
-            Загружено: {formatNumber(currentLoad)} т из {container.capacity} т ({formatNumber(percentage)}%)
-          </span>
-          <span className={`font-semibold ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
-            Осталось: {formatNumber(remaining)} т
-          </span>
-        </div>
-      </div>
-
-      {/* Add Item Form */}
-      <div className="p-4 bg-white border-t-2 border-gray-100">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div className="md:col-span-5">
-            <Select
-              label="Позиция"
-              value={selectedItemId}
-              onChange={(e) => setSelectedItemId(e.target.value)}
-              options={[
-                { value: '', label: 'Выберите позицию' },
-                ...items.map(item => ({ value: item.id, label: item.name })),
-              ]}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <Input
-              label="Количество"
-              type="number"
-              step="0.001"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              placeholder="0"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <Select
-              label="Единица"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value as Unit)}
-              options={[
-                { value: 'т', label: 'т' },
-                { value: 'кг', label: 'кг' },
-              ]}
-            />
-          </div>
-          <div className="md:col-span-3 flex items-end gap-2">
-            <Button
-              onClick={handleAdd}
-              className={`flex-1 ${
-                editingIndex !== null
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-green-600 hover:bg-green-700'
-              }`}
-            >
-              {editingIndex !== null ? '🔄 Обновить' : '➕ Добавить'}
-            </Button>
-            {editingIndex !== null && (
-              <Button
-                onClick={handleCancelEdit}
-                variant="secondary"
-                className="bg-gray-200 hover:bg-gray-300"
-              >
-                ✖️
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Items Table */}
-      {container.items.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-100 border-y border-gray-200">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Позиция</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Количество</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Единица</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">В тоннах</th>
-                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {container.items.map((item, index) => {
-                const itemData = itemStore.getById(item.itemId);
-                return (
-                  <tr key={index} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-sm text-gray-900">{itemData?.name || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{formatNumber(item.quantity)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{item.unit}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                      {formatNumber(item.quantityInTons)} т
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex justify-center gap-3">
-                        <button
-                          onClick={() => handleEdit(index)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors text-lg"
-                          title="Редактировать"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => onDeleteItem(container.id, index)}
-                          className="text-red-600 hover:text-red-800 transition-colors text-lg"
-                          title="Удалить"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {container.items.length === 0 && (
-        <div className="p-6 text-center text-gray-500 border-t border-gray-200">
-          <p className="text-sm">Контейнер пуст. Добавьте товары.</p>
-        </div>
-      )}
-    </div>
   );
 }
