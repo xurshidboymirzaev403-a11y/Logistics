@@ -23,7 +23,6 @@ export function CreateOrderPage() {
   const [containerSize, setContainerSize] = useState(TONS_IN_CONTAINER_DEFAULT);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [isAddingToCart, setIsAddingToCart] = useState(false);
 
   const handleAddToCart = () => {
     if (!selectedItemId || !quantity) {
@@ -40,8 +39,6 @@ export function CreateOrderPage() {
     const item = itemStore.getById(selectedItemId);
     if (!item) return;
 
-    setIsAddingToCart(true);
-    
     const quantityInTons = toTons(qty, unit, containerSize);
     
     const newItem: CartItem = {
@@ -52,35 +49,32 @@ export function CreateOrderPage() {
       containerSize,
     };
 
-    setTimeout(() => {
-      if (editingIndex !== null) {
+    if (editingIndex !== null) {
+      const newCart = [...cart];
+      newCart[editingIndex] = newItem;
+      setCart(newCart);
+      setEditingIndex(null);
+      showToast('success', 'Позиция обновлена');
+    } else {
+      // Check if item already exists in cart
+      const existingIndex = cart.findIndex(c => c.itemId === selectedItemId);
+      if (existingIndex >= 0) {
         const newCart = [...cart];
-        newCart[editingIndex] = newItem;
+        newCart[existingIndex].quantity += qty;
+        newCart[existingIndex].quantityInTons += quantityInTons;
         setCart(newCart);
-        setEditingIndex(null);
-        showToast('success', 'Позиция обновлена');
+        showToast('success', 'Количество увеличено');
       } else {
-        // Check if item already exists in cart
-        const existingIndex = cart.findIndex(c => c.itemId === selectedItemId);
-        if (existingIndex >= 0) {
-          const newCart = [...cart];
-          newCart[existingIndex].quantity += qty;
-          newCart[existingIndex].quantityInTons += quantityInTons;
-          setCart(newCart);
-          showToast('success', 'Количество увеличено');
-        } else {
-          setCart([...cart, newItem]);
-          showToast('success', 'Позиция добавлена в корзину');
-        }
+        setCart([...cart, newItem]);
+        showToast('success', 'Позиция добавлена в корзину');
       }
+    }
 
-      // Reset form
-      setSelectedItemId('');
-      setQuantity('');
-      setUnit('т');
-      setContainerSize(TONS_IN_CONTAINER_DEFAULT);
-      setIsAddingToCart(false);
-    }, 300);
+    // Reset form
+    setSelectedItemId('');
+    setQuantity('');
+    setUnit('т');
+    setContainerSize(TONS_IN_CONTAINER_DEFAULT);
   };
 
   const handleEdit = (index: number) => {
@@ -324,11 +318,11 @@ export function CreateOrderPage() {
             <div className="md:col-span-2 flex items-end">
               <Button 
                 onClick={handleAddToCart} 
-                className={`w-full transition-all duration-300 ${
+                className={`w-full transition-all duration-200 ${
                   editingIndex !== null 
                     ? 'bg-blue-600 hover:bg-blue-700' 
                     : 'bg-green-600 hover:bg-green-700'
-                } ${isAddingToCart ? 'scale-95' : 'scale-100'}`}
+                }`}
               >
                 {editingIndex !== null ? '🔄 Обновить' : '➕ Добавить'}
               </Button>
