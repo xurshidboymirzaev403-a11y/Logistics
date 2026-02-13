@@ -4,8 +4,14 @@ import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore, itemStore } from '../../store';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber } from '../../utils/helpers';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT, TONS_IN_CONTAINER_EXCEPTION } from '../../utils/helpers';
 import type { Order, OrderLine } from '../../types';
+
+interface GroupedContainer {
+  index: number;
+  capacity: number;
+  lines: OrderLine[];
+}
 
 export function OrderDetailsPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -23,6 +29,30 @@ export function OrderDetailsPage() {
       }
     }
   }, [orderId]);
+
+  // Group order lines by container
+  const groupedContainers: GroupedContainer[] = [];
+  const hasContainerIndexes = orderLines.some(line => line.containerIndex !== undefined);
+
+  if (hasContainerIndexes) {
+    // New container-based orders
+    const containerMap = new Map<number, OrderLine[]>();
+    
+    orderLines.forEach(line => {
+      const index = line.containerIndex ?? 0;
+      if (!containerMap.has(index)) {
+        containerMap.set(index, []);
+      }
+      containerMap.get(index)!.push(line);
+    });
+
+    containerMap.forEach((lines, index) => {
+      const capacity = lines[0]?.containerSize || TONS_IN_CONTAINER_DEFAULT;
+      groupedContainers.push({ index, capacity, lines });
+    });
+
+    groupedContainers.sort((a, b) => a.index - b.index);
+  }
 
   if (!order) {
     return (
@@ -100,21 +130,139 @@ export function OrderDetailsPage() {
           </div>
         </div>
 
-        {/* Order Lines */}
+        {/* Order Lines - Container View or Flat View */}
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-4">Позиции заказа</h2>
-          <Table columns={columns} data={orderLines} emptyMessage="Нет позиций в заказе" />
+          
+          {hasContainerIndexes ? (
+            // Container-based view
+            <div className="space-y-4">
+              {groupedContainers.map((container) => {
+                const currentLoad = container.lines.reduce((sum, line) => sum + line.quantityInTons, 0);
+                const percentage = (currentLoad / container.capacity) * 100;
+                const getProgressBarColor = () => {
+                  if (percentage > 100) return 'bg-red-500';
+                  if (percentage >= 80) return 'bg-yellow-500';
+                  return 'bg-green-500';
+                };
+
+                return (
+                  <div key={container.index} className="bg-white rounded-lg shadow-md overflow-hidden border-2 border-gray-200">
+                    {/* Container Header */}
+                    <div className={`p-4 ${
+                      container.capacity === TONS_IN_CONTAINER_EXCEPTION
+                        ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white'
+                        : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
+                    }`}>
+                      <h3 className="text-lg font-bold flex items-center gap-2">
+                        📦 Контейнер #{container.index + 1} ({container.capacity}т)
+                        {container.capacity === TONS_IN_CONTAINER_EXCEPTION && <span className="text-xl">⚠️</span>}
+                      </h3>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="p-4 bg-gray-50">
+                      <div className="mb-2">
+                        <div className="h-5 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${getProgressBarColor()} transition-all duration-500 ease-out flex items-center justify-center text-xs font-bold text-white`}
+                            style={{ width: `${Math.min(percentage, 100)}%` }}
+                          >
+                            {percentage > 5 && `${formatNumber(percentage)}%`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="font-semibold text-gray-700">
+                          Загружено: {formatNumber(currentLoad)} т из {container.capacity} т
+                        </span>
+                        <span className={`font-semibold ${
+                          currentLoad > container.capacity ? 'text-red-600' : 'text-green-600'
+                        }`}>
+                          {formatNumber(percentage)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Container Items */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-100 border-y border-gray-200">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Позиция</th>
+                            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Количество</th>
+                            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Единица</th>
+                            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">В тоннах</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {container.lines.map((line) => (
+                            <tr key={line.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-2 text-sm text-gray-900">
+                                {itemStore.getById(line.itemId)?.name || '-'}
+                              </td>
+                              <td className="px-4 py-2 text-sm text-gray-900">
+                                {formatNumber(line.quantity)}
+                              </td>
+                              <td className="px-4 py-2 text-sm text-gray-900">{line.unit}</td>
+                              <td className="px-4 py-2 text-sm font-semibold text-gray-900">
+                                {formatNumber(line.quantityInTons)} т
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            // Flat view for backward compatibility
+            <Table columns={columns} data={orderLines} emptyMessage="Нет позиций в заказе" />
+          )}
         </div>
 
         {/* Totals */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex justify-between items-center">
-            <span className="text-lg font-semibold text-gray-700">Всего:</span>
-            <span className="text-2xl font-bold text-blue-600">
-              {formatNumber(totalTons)} т ({orderLines.length} поз.)
-            </span>
+        {hasContainerIndexes ? (
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg shadow-lg p-6 text-white">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <span className="text-2xl">📊</span>
+              Итого по заказу
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
+                <p className="text-sm opacity-90 mb-1">Всего контейнеров</p>
+                <p className="text-2xl font-bold">{groupedContainers.length}</p>
+              </div>
+              <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
+                <p className="text-sm opacity-90 mb-1">Общий вес</p>
+                <p className="text-2xl font-bold">{formatNumber(totalTons)} т</p>
+              </div>
+              <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
+                <p className="text-sm opacity-90 mb-1">Контейнеры 26т</p>
+                <p className="text-2xl font-bold">
+                  {groupedContainers.filter(c => c.capacity === 26).length} шт.
+                </p>
+              </div>
+              <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
+                <p className="text-sm opacity-90 mb-1">Контейнеры 27т</p>
+                <p className="text-2xl font-bold">
+                  {groupedContainers.filter(c => c.capacity === 27).length} шт.
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-semibold text-gray-700">Всего:</span>
+              <span className="text-2xl font-bold text-blue-600">
+                {formatNumber(totalTons)} т ({orderLines.length} поз.)
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
