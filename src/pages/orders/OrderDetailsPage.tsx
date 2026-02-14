@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore, itemStore } from '../../store';
 import { showToast } from '../../components/ui/Toast';
@@ -19,6 +20,8 @@ export function OrderDetailsPage() {
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | undefined>();
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
   const isAdminMode = adminModeStore.get();
 
   useEffect(() => {
@@ -28,6 +31,7 @@ export function OrderDetailsPage() {
       
       if (foundOrder) {
         setOrderLines(orderLineStore.getByOrderId(orderId));
+        setEditedName(foundOrder.name || '');
       }
     }
   }, [orderId]);
@@ -73,6 +77,37 @@ export function OrderDetailsPage() {
 
     showToast('success', 'Заказ удален');
     navigate('/orders');
+  };
+
+  const handleSaveName = () => {
+    if (!order) return;
+
+    const currentUser = currentUserStore.get();
+    const trimmedName = editedName.trim();
+
+    orderStore.update(order.id, { name: trimmedName || undefined });
+    
+    auditLogStore.create({
+      action: 'UPDATE',
+      entityType: 'Order',
+      entityId: order.id,
+      userId: currentUser?.id || '',
+      details: { 
+        orderNumber: order.orderNumber,
+        field: 'name',
+        oldValue: order.name,
+        newValue: trimmedName || undefined,
+      },
+    });
+
+    setOrder({ ...order, name: trimmedName || undefined });
+    setIsEditingName(false);
+    showToast('success', 'Название обновлено');
+  };
+
+  const handleCancelEditName = () => {
+    setEditedName(order?.name || '');
+    setIsEditingName(false);
   };
 
   // Group order lines by container
@@ -168,20 +203,59 @@ export function OrderDetailsPage() {
 
         {/* Order Info */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Номер заказа</p>
-              <p className="text-lg font-semibold">{order.orderNumber}</p>
+          <div className="grid grid-cols-1 gap-4">
+            {/* Order Name/Number Section */}
+            <div className="border-b pb-4">
+              <p className="text-sm text-gray-600 mb-2">Название заказа</p>
+              {isEditingName ? (
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Input
+                      type="text"
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      placeholder={order.orderNumber}
+                      autoFocus
+                    />
+                  </div>
+                  <Button size="sm" onClick={handleSaveName}>
+                    ✅ Сохранить
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={handleCancelEditName}>
+                    ✖️ Отмена
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <p className="text-lg font-semibold">
+                    {order.name || order.orderNumber}
+                  </p>
+                  <button
+                    onClick={() => setIsEditingName(true)}
+                    className="text-blue-600 hover:text-blue-800 transition-colors text-lg"
+                    title="Редактировать название"
+                  >
+                    ✏️
+                  </button>
+                </div>
+              )}
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Дата создания</p>
-              <p className="text-lg font-semibold">{formatDateTime(order.createdAt)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Статус</p>
-              <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getOrderStatusColor(order.status)}`}>
-                {getOrderStatusLabel(order.status)}
-              </span>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-gray-600">Номер заказа</p>
+                <p className="text-lg font-semibold">{order.orderNumber}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Дата создания</p>
+                <p className="text-lg font-semibold">{formatDateTime(order.createdAt)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Статус</p>
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getOrderStatusColor(order.status)}`}>
+                  {getOrderStatusLabel(order.status)}
+                </span>
+              </div>
             </div>
           </div>
         </div>

@@ -69,6 +69,15 @@ export function OrdersListPage() {
       ),
     },
     {
+      key: 'name',
+      label: 'Название',
+      render: (value: string, row: any) => (
+        <span className="text-gray-900">
+          {value || row.orderNumber}
+        </span>
+      ),
+    },
+    {
       key: 'createdAt',
       label: 'Дата создания',
       render: (value: string) => formatDateTime(value),
