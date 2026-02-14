@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore } from '../../store';
 import { Table } from '../../components/ui/Table';
 import { showToast } from '../../components/ui/Toast';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime } from '../../utils/helpers';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatTonsWithContainers } from '../../utils/helpers';
 import type { Order } from '../../types';
 
 export function OrdersListPage() {
@@ -81,6 +81,15 @@ export function OrdersListPage() {
       key: 'createdAt',
       label: 'Дата создания',
       render: (value: string) => formatDateTime(value),
+    },
+    {
+      key: 'tonnage',
+      label: 'Тоннаж',
+      render: (_: any, row: any) => {
+        const orderLines = orderLineStore.getByOrderId(row.id);
+        const totalTons = orderLines.reduce((sum, line) => sum + line.quantityInTons, 0);
+        return formatTonsWithContainers(totalTons);
+      },
     },
     {
       key: 'status',
