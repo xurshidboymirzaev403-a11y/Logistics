@@ -17,6 +17,7 @@ import {
 import { 
   toTons, 
   formatNumber, 
+  formatTonsWithContainers,
   validateDistribution, 
   TONS_IN_CONTAINER_DEFAULT
 } from '../../utils/helpers';
@@ -216,16 +217,16 @@ export function DistributionPage() {
                 <div>
                   <h2 className="text-xl font-semibold">{item?.name}</h2>
                   <p className="text-gray-600">
-                    Заказано: {formatNumber(line.quantityInTons)} т
+                    Заказано: {formatTonsWithContainers(line.quantityInTons)}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-600">Распределено</p>
                   <p className={`text-2xl font-bold ${isFullyDistributed ? 'text-green-600' : 'text-orange-600'}`}>
-                    {formatNumber(allocated)} т
+                    {formatTonsWithContainers(allocated)}
                   </p>
                   <p className="text-sm text-gray-600">
-                    Остаток: {formatNumber(Math.max(0, remainder))} т
+                    Остаток: {formatTonsWithContainers(Math.max(0, remainder))}
                   </p>
                 </div>
               </div>
@@ -250,7 +251,7 @@ export function DistributionPage() {
                           <tr key={alloc.id}>
                             <td className="px-3 py-2">{supplier?.name}</td>
                             <td className="px-3 py-2">
-                              {formatNumber(alloc.quantity)} {alloc.unit} ({formatNumber(alloc.quantityInTons)} т)
+                              {formatNumber(alloc.quantity)} {alloc.unit} ({formatTonsWithContainers(alloc.quantityInTons)})
                             </td>
                             <td className="px-3 py-2">
                               {formatCurrency(alloc.pricePerTon, alloc.currency)}/т
