@@ -1,16 +1,43 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
-import { orderStore } from '../../store';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime } from '../../utils/helpers';
+import { orderStore, orderLineStore, allocationStore } from '../../store';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, validateDistribution } from '../../utils/helpers';
 
 export function FinanceListPage() {
   const navigate = useNavigate();
   const [orders] = useState(
     orderStore.getAll().filter((o) => ['financial', 'completed'].includes(o.status))
   );
+
+  // Calculate distribution status for each order
+  const ordersWithDistributionStatus = useMemo(() => {
+    return orders.map(order => {
+      const lines = orderLineStore.getByOrderId(order.id);
+      const allocations = allocationStore.getByOrderId(order.id);
+      
+      let totalOrdered = 0;
+      let totalAllocated = 0;
+      
+      lines.forEach(line => {
+        totalOrdered += line.quantityInTons;
+        const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
+        const { allocated } = validateDistribution(line, lineAllocations);
+        totalAllocated += allocated;
+      });
+
+      const isPartiallyDistributed = totalAllocated < totalOrdered && totalAllocated > 0;
+      const distributionPercentage = totalOrdered > 0 ? (totalAllocated / totalOrdered) * 100 : 0;
+
+      return {
+        ...order,
+        isPartiallyDistributed,
+        distributionPercentage,
+      };
+    });
+  }, [orders]);
 
   const columns = [
     {
@@ -33,10 +60,17 @@ export function FinanceListPage() {
     {
       key: 'status',
       label: 'Статус',
-      render: (value: string) => (
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getOrderStatusColor(value)}`}>
-          {getOrderStatusLabel(value)}
-        </span>
+      render: (value: string, row: any) => (
+        <div className="flex flex-col gap-1">
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getOrderStatusColor(value)}`}>
+            {getOrderStatusLabel(value)}
+          </span>
+          {row.isPartiallyDistributed && (
+            <span className="px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+              ⚠️ Частично распределён ({row.distributionPercentage.toFixed(0)}%)
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -61,7 +95,7 @@ export function FinanceListPage() {
 
         <Table
           columns={columns}
-          data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
+          data={ordersWithDistributionStatus.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
           emptyMessage="Нет заказов в финансовой обработке"
         />
       </div>

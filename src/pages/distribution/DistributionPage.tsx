@@ -137,24 +137,34 @@ export function DistributionPage() {
   };
 
   const handleCompleteDistribution = () => {
+    if (!order) return;
+    const currentUser = currentUserStore.get();
+
     // Check all lines are fully distributed
-    for (const line of orderLines) {
+    const allFullyDistributed = orderLines.every(line => {
       const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
       const { isValid, remainder } = validateDistribution(line, lineAllocations);
-      
-      if (!isValid || Math.abs(remainder) >= 0.001) {
-        showToast('error', 'Не все позиции полностью распределены');
+      return isValid && Math.abs(remainder) < 0.001;
+    });
+
+    if (!allFullyDistributed) {
+      // Show warning for partial distribution
+      if (!confirm('⚠️ Не все позиции распределены. Продолжить?')) {
         return;
       }
     }
 
-    orderStore.update(order!.id, { status: 'financial' });
+    orderStore.update(order.id, { status: 'financial' });
     auditLogStore.create({
       action: 'UPDATE',
       entityType: 'Order',
-      entityId: order!.id,
+      entityId: order.id,
       userId: currentUser?.id || '',
-      details: { status: 'financial', orderNumber: order?.orderNumber },
+      details: { 
+        status: 'financial', 
+        orderNumber: order?.orderNumber,
+        fullyDistributed: allFullyDistributed,
+      },
     });
     
     showToast('success', 'Заказ переведен в финансы');
@@ -174,12 +184,6 @@ export function DistributionPage() {
     );
   }
 
-  const allFullyDistributed = orderLines.every(line => {
-    const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
-    const { isValid, remainder } = validateDistribution(line, lineAllocations);
-    return isValid && Math.abs(remainder) < 0.001;
-  });
-
   return (
     <Layout>
       <div>
@@ -188,7 +192,7 @@ export function DistributionPage() {
           <div className="flex gap-2">
             <Button
               onClick={handleCompleteDistribution}
-              disabled={!allFullyDistributed || order.status !== 'locked'}
+              disabled={order.status !== 'locked'}
               variant="success"
             >
               Перейти в финансы

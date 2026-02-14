@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
@@ -8,7 +8,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore, itemStore } from '../../store';
 import { showToast } from '../../components/ui/Toast';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT } from '../../utils/helpers';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT, validateDistribution } from '../../utils/helpers';
 import type { Order, OrderLine } from '../../types';
 
 interface GroupedContainer {
@@ -60,6 +60,28 @@ export function OrderDetailsPage() {
       }
     }
   }, [orderId]);
+
+  // Calculate distribution status for each line
+  const lineDistributionStatus = useMemo(() => {
+    if (!orderId) return new Map();
+
+    const allocations = allocationStore.getByOrderId(orderId);
+    const statusMap = new Map();
+
+    orderLines.forEach(line => {
+      const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
+      const { allocated } = validateDistribution(line, lineAllocations);
+      const percentage = line.quantityInTons > 0 ? (allocated / line.quantityInTons) * 100 : 0;
+      
+      statusMap.set(line.id, {
+        allocated,
+        percentage,
+        isFullyDistributed: percentage >= 99.9,
+      });
+    });
+
+    return statusMap;
+  }, [orderId, orderLines]);
 
   const handleDelete = () => {
     if (!order) return;
@@ -419,6 +441,42 @@ export function OrderDetailsPage() {
       render: (value: number) => `${formatNumber(value)} т`,
     },
     {
+      key: 'distribution',
+      label: 'Распределение',
+      render: (_: any, row: OrderLine) => {
+        const status = lineDistributionStatus.get(row.id);
+        if (!status) return '-';
+
+        const getProgressColor = () => {
+          if (status.percentage >= 99.9) return 'bg-green-500';
+          if (status.percentage > 0) return 'bg-yellow-500';
+          return 'bg-red-500';
+        };
+
+        const getTextColor = () => {
+          if (status.percentage >= 99.9) return 'text-green-600';
+          if (status.percentage > 0) return 'text-yellow-600';
+          return 'text-red-600';
+        };
+
+        return (
+          <div className="space-y-1">
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+              <div
+                className={`h-full ${getProgressColor()} transition-all duration-500 flex items-center justify-center text-xs font-bold text-white`}
+                style={{ width: `${Math.min(status.percentage, 100)}%` }}
+              >
+                {status.percentage > 10 && `${status.percentage.toFixed(0)}%`}
+              </div>
+            </div>
+            <div className={`text-xs ${getTextColor()} font-semibold`}>
+              {formatNumber(status.allocated)} т из {formatNumber(row.quantityInTons)} т
+            </div>
+          </div>
+        );
+      },
+    },
+    {
       key: 'containerSize',
       label: 'Размер конт.',
       render: (value: number | undefined, row: OrderLine) => 
@@ -602,13 +660,29 @@ export function OrderDetailsPage() {
                             <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Количество</th>
                             <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Единица</th>
                             <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">В тоннах</th>
+                            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Распределение</th>
                             {order.status === 'locked' && (
                               <th className="px-4 py-2 text-center text-sm font-semibold text-gray-700">Действия</th>
                             )}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                          {container.lines.map((line) => (
+                          {container.lines.map((line) => {
+                            const distStatus = lineDistributionStatus.get(line.id);
+                            const getDistProgressColor = () => {
+                              if (!distStatus) return 'bg-gray-300';
+                              if (distStatus.percentage >= 99.9) return 'bg-green-500';
+                              if (distStatus.percentage > 0) return 'bg-yellow-500';
+                              return 'bg-red-500';
+                            };
+                            const getDistTextColor = () => {
+                              if (!distStatus) return 'text-gray-600';
+                              if (distStatus.percentage >= 99.9) return 'text-green-600';
+                              if (distStatus.percentage > 0) return 'text-yellow-600';
+                              return 'text-red-600';
+                            };
+
+                            return (
                             <tr key={line.id} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-2 text-sm text-gray-900">
                                 {itemStore.getById(line.itemId)?.name || '-'}
@@ -619,6 +693,21 @@ export function OrderDetailsPage() {
                               <td className="px-4 py-2 text-sm text-gray-900">{line.unit}</td>
                               <td className="px-4 py-2 text-sm font-semibold text-gray-900">
                                 {formatNumber(line.quantityInTons)} т
+                              </td>
+                              <td className="px-4 py-2">
+                                {distStatus ? (
+                                  <div className="space-y-1">
+                                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                      <div
+                                        className={`h-full ${getDistProgressColor()} transition-all duration-500`}
+                                        style={{ width: `${Math.min(distStatus.percentage, 100)}%` }}
+                                      />
+                                    </div>
+                                    <div className={`text-xs ${getDistTextColor()} font-semibold`}>
+                                      {formatNumber(distStatus.allocated)} т / {formatNumber(line.quantityInTons)} т
+                                    </div>
+                                  </div>
+                                ) : '-'}
                               </td>
                               {order.status === 'locked' && (
                                 <td className="px-4 py-2 text-center">
@@ -648,7 +737,8 @@ export function OrderDetailsPage() {
                                 </td>
                               )}
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
