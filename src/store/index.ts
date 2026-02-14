@@ -448,7 +448,6 @@ export async function importData(jsonString: string): Promise<boolean> {
     // Import in correct order (respecting foreign keys)
     if (data.USERS && data.USERS.length > 0) {
       for (const user of data.USERS) {
-        const { id, ...userWithoutId } = user;
         await supabase.from('users').insert(toSnakeCase(user));
       }
     }

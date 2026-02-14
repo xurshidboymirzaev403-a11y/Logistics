@@ -18,7 +18,6 @@ interface CartItem {
 export function CreateOrderPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
   const currentUser = currentUserStore.get();
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -31,19 +30,11 @@ export function CreateOrderPage() {
 
   useEffect(() => {
     const loadItems = async () => {
-      setLoading(true);
       const data = await itemStore.getAll();
       setItems(data);
-      setLoading(false);
     };
     loadItems();
   }, []);
-
-  // Form state
-  const [selectedItemId, setSelectedItemId] = useState('');
-  const [tons, setTons] = useState('');
-  const [containers, setContainers] = useState('');
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   // Handle tons input change
   const handleTonsChange = (value: string) => {
@@ -302,7 +293,7 @@ export function CreateOrderPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {cart.map((item, index) => {
-                    const itemData = itemStore.getById(item.itemId);
+                    const itemData = items.find(i => i.id === item.itemId);
                     return (
                       <tr key={index} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 text-sm text-gray-900">{itemData?.name || '-'}</td>
