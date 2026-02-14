@@ -15,7 +15,7 @@ import {
   auditLogStore,
   itemStore,
 } from '../../store';
-import { getTodayDate, formatDateTime, getPaymentTypeLabel, validateDistribution, formatNumber } from '../../utils/helpers';
+import { getTodayDate, formatDateTime, getPaymentTypeLabel, validateDistribution, formatNumber, formatTonsWithContainers } from '../../utils/helpers';
 import { formatCurrency } from '../../utils/format';
 import type { Order, Allocation, PaymentOperation, Currency } from '../../types';
 
@@ -279,7 +279,7 @@ export function FinancePage() {
               <span className="text-3xl">⚠️</span>
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-yellow-900 mb-2">
-                  Не распределено: {formatNumber(undistributedInfo.totalRemaining)} т из {formatNumber(undistributedInfo.totalOrdered)} т ({formatNumber(100 - undistributedInfo.percentage)}%)
+                  Не распределено: {formatTonsWithContainers(undistributedInfo.totalRemaining)} из {formatTonsWithContainers(undistributedInfo.totalOrdered)} ({formatNumber(100 - undistributedInfo.percentage)}%)
                 </h3>
                 <p className="text-sm text-yellow-800 mb-3">
                   Распределено только {formatNumber(undistributedInfo.percentage)}% от заказа
@@ -293,7 +293,7 @@ export function FinancePage() {
                         <div key={index} className="flex justify-between text-sm">
                           <span className="text-gray-900">{line.itemName}</span>
                           <span className="text-red-600 font-semibold">
-                            Остаток: {formatNumber(line.remaining)} т (из {formatNumber(line.ordered)} т)
+                            Остаток: {formatTonsWithContainers(line.remaining)} (из {formatTonsWithContainers(line.ordered)})
                           </span>
                         </div>
                       ))}
@@ -346,18 +346,21 @@ export function FinancePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {group.allocations.map((alloc) => (
-                      <tr key={alloc.id}>
-                        <td className="px-3 py-2">{alloc.itemId}</td>
-                        <td className="px-3 py-2 text-right">{alloc.quantityInTons.toFixed(3)}</td>
-                        <td className="px-3 py-2 text-right">
-                          {formatCurrency(alloc.pricePerTon, alloc.currency)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium">
-                          {formatCurrency(alloc.totalSum, alloc.currency)}
-                        </td>
-                      </tr>
-                    ))}
+                    {group.allocations.map((alloc) => {
+                      const item = itemStore.getById(alloc.itemId);
+                      return (
+                        <tr key={alloc.id}>
+                          <td className="px-3 py-2">{item?.name || alloc.itemId}</td>
+                          <td className="px-3 py-2 text-right">{formatTonsWithContainers(alloc.quantityInTons)}</td>
+                          <td className="px-3 py-2 text-right">
+                            {formatCurrency(alloc.pricePerTon, alloc.currency)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium">
+                            {formatCurrency(alloc.totalSum, alloc.currency)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot className="bg-gray-50 font-semibold">
                     <tr>

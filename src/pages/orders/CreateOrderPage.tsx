@@ -6,7 +6,7 @@ import { Select } from '../../components/ui/Select';
 import { Input } from '../../components/ui/Input';
 import { showToast } from '../../components/ui/Toast';
 import { orderStore, orderLineStore, itemStore, currentUserStore, auditLogStore } from '../../store';
-import { formatNumber } from '../../utils/helpers';
+import { formatNumber, formatTonsWithContainers } from '../../utils/helpers';
 
 interface CartItem {
   itemId: string;
@@ -294,7 +294,7 @@ export function CreateOrderPage() {
                       <tr key={index} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 text-sm text-gray-900">{itemData?.name || '-'}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                          {formatNumber(item.tons)} т
+                          {formatTonsWithContainers(item.tons)}
                         </td>
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                           {formatNumber(item.containers)} конт.

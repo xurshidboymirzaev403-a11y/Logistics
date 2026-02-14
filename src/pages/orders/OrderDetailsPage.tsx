@@ -8,7 +8,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore, itemStore } from '../../store';
 import { showToast } from '../../components/ui/Toast';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT, validateDistribution } from '../../utils/helpers';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, formatTonsWithContainers, TONS_IN_CONTAINER_DEFAULT, validateDistribution } from '../../utils/helpers';
 import type { Order, OrderLine } from '../../types';
 
 interface GroupedContainer {
@@ -438,7 +438,7 @@ export function OrderDetailsPage() {
     {
       key: 'quantityInTons',
       label: 'В тоннах',
-      render: (value: number) => `${formatNumber(value)} т`,
+      render: (value: number) => formatTonsWithContainers(value),
     },
     {
       key: 'distribution',
@@ -470,7 +470,7 @@ export function OrderDetailsPage() {
               </div>
             </div>
             <div className={`text-xs ${getTextColor()} font-semibold`}>
-              {formatNumber(status.allocated)} т из {formatNumber(row.quantityInTons)} т
+              {formatTonsWithContainers(status.allocated)} из {formatTonsWithContainers(row.quantityInTons)}
             </div>
           </div>
         );
@@ -641,7 +641,7 @@ export function OrderDetailsPage() {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="font-semibold text-gray-700">
-                          Загружено: {formatNumber(currentLoad)} т из {container.capacity} т
+                          Загружено: {formatTonsWithContainers(currentLoad)} из {container.capacity} т
                         </span>
                         <span className={`font-semibold ${
                           currentLoad > container.capacity ? 'text-red-600' : 'text-green-600'
@@ -692,7 +692,7 @@ export function OrderDetailsPage() {
                               </td>
                               <td className="px-4 py-2 text-sm text-gray-900">{line.unit}</td>
                               <td className="px-4 py-2 text-sm font-semibold text-gray-900">
-                                {formatNumber(line.quantityInTons)} т
+                                {formatTonsWithContainers(line.quantityInTons)}
                               </td>
                               <td className="px-4 py-2">
                                 {distStatus ? (
@@ -704,7 +704,7 @@ export function OrderDetailsPage() {
                                       />
                                     </div>
                                     <div className={`text-xs ${getDistTextColor()} font-semibold`}>
-                                      {formatNumber(distStatus.allocated)} т / {formatNumber(line.quantityInTons)} т
+                                      {formatTonsWithContainers(distStatus.allocated)} / {formatTonsWithContainers(line.quantityInTons)}
                                     </div>
                                   </div>
                                 ) : '-'}
@@ -766,7 +766,7 @@ export function OrderDetailsPage() {
               </div>
               <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                 <p className="text-sm opacity-90 mb-1">Общий вес</p>
-                <p className="text-2xl font-bold">{formatNumber(totalTons)} т</p>
+                <p className="text-2xl font-bold">{formatTonsWithContainers(totalTons)}</p>
               </div>
               <div className="bg-white bg-opacity-20 rounded-lg p-4 backdrop-blur-sm">
                 <p className="text-sm opacity-90 mb-1">Контейнеры 26т</p>
@@ -783,7 +783,7 @@ export function OrderDetailsPage() {
             <div className="flex justify-between items-center">
               <span className="text-lg font-semibold text-gray-700">Всего:</span>
               <span className="text-2xl font-bold text-blue-600">
-                {formatNumber(totalTons)} т ({orderLines.length} поз.)
+                {formatTonsWithContainers(totalTons)} ({orderLines.length} поз.)
               </span>
             </div>
           </div>
