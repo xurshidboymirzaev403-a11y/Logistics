@@ -18,7 +18,10 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   useEffect(() => {
-    initializeDefaultUser();
+    const init = async () => {
+      await initializeDefaultUser();
+    };
+    init();
   }, []);
 
   return (

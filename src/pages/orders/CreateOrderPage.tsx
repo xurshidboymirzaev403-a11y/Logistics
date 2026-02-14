@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/Input';
 import { showToast } from '../../components/ui/Toast';
 import { orderStore, orderLineStore, itemStore, currentUserStore, auditLogStore } from '../../store';
 import { formatNumber } from '../../utils/helpers';
+import type { Item } from '../../types';
 
 interface CartItem {
   itemId: string;
@@ -16,10 +17,27 @@ interface CartItem {
 
 export function CreateOrderPage() {
   const navigate = useNavigate();
-  const items = itemStore.getAll();
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
   const currentUser = currentUserStore.get();
 
   const [cart, setCart] = useState<CartItem[]>([]);
+
+  // Form state
+  const [selectedItemId, setSelectedItemId] = useState('');
+  const [tons, setTons] = useState('');
+  const [containers, setContainers] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    const loadItems = async () => {
+      setLoading(true);
+      const data = await itemStore.getAll();
+      setItems(data);
+      setLoading(false);
+    };
+    loadItems();
+  }, []);
 
   // Form state
   const [selectedItemId, setSelectedItemId] = useState('');
@@ -120,7 +138,7 @@ export function CreateOrderPage() {
   };
 
   // Save order
-  const handleSave = () => {
+  const handleSave = async () => {
     if (cart.length === 0) {
       showToast('warning', 'Добавьте хотя бы одну позицию в корзину');
       return;
@@ -131,42 +149,50 @@ export function CreateOrderPage() {
       return;
     }
 
-    // Create order
-    const order = orderStore.create({
-      orderNumber: orderStore.getNextOrderNumber(),
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser.id,
-      status: 'locked',
-    });
+    try {
+      // Get next order number
+      const orderNumber = await orderStore.getNextOrderNumber();
 
-    // Create order lines
-    cart.forEach(item => {
-      orderLineStore.create({
-        orderId: order.id,
-        itemId: item.itemId,
-        quantity: item.tons, // Save tons as quantity
-        unit: 'т', // Always save as tons for backward compatibility
-        quantityInTons: item.tons,
-        containerSize: 28,
+      // Create order
+      const order = await orderStore.create({
+        orderNumber,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.id,
+        status: 'locked',
       });
-    });
 
-    // Log audit
-    auditLogStore.create({
-      action: 'CREATE',
-      entityType: 'Order',
-      entityId: order.id,
-      userId: currentUser.id,
-      details: { 
-        orderNumber: order.orderNumber, 
-        linesCount: cart.length,
-        totalTons: totals.totalTons,
-        totalContainers: totals.totalContainers,
-      },
-    });
+      // Create order lines
+      for (const item of cart) {
+        await orderLineStore.create({
+          orderId: order.id,
+          itemId: item.itemId,
+          quantity: item.tons, // Save tons as quantity
+          unit: 'т', // Always save as tons for backward compatibility
+          quantityInTons: item.tons,
+          containerSize: 28,
+        });
+      }
 
-    showToast('success', `Заказ ${order.orderNumber} создан`);
-    navigate(`/orders/${order.id}`);
+      // Log audit
+      await auditLogStore.create({
+        action: 'CREATE',
+        entityType: 'Order',
+        entityId: order.id,
+        userId: currentUser.id,
+        details: { 
+          orderNumber: order.orderNumber, 
+          linesCount: cart.length,
+          totalTons: totals.totalTons,
+          totalContainers: totals.totalContainers,
+        },
+      });
+
+      showToast('success', `Заказ ${order.orderNumber} создан`);
+      navigate(`/orders/${order.id}`);
+    } catch (error) {
+      console.error('Error creating order:', error);
+      showToast('error', 'Ошибка при создании заказа');
+    }
   };
 
   // Calculate totals

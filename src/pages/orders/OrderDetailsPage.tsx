@@ -19,20 +19,37 @@ export function OrderDetailsPage() {
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | undefined>();
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const isAdminMode = adminModeStore.get();
 
   useEffect(() => {
-    if (orderId) {
-      const foundOrder = orderStore.getById(orderId);
-      setOrder(foundOrder);
-      
-      if (foundOrder) {
-        setOrderLines(orderLineStore.getByOrderId(orderId));
+    const loadData = async () => {
+      if (orderId) {
+        try {
+          setLoading(true);
+          const foundOrder = await orderStore.getById(orderId);
+          setOrder(foundOrder);
+          
+          if (foundOrder) {
+            const [lines, itms] = await Promise.all([
+              orderLineStore.getByOrderId(orderId),
+              itemStore.getAll()
+            ]);
+            setOrderLines(lines);
+            setItems(itms);
+          }
+        } catch (error) {
+          showToast('error', 'Ошибка загрузки данных');
+        } finally {
+          setLoading(false);
+        }
       }
-    }
+    };
+    loadData();
   }, [orderId]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!order) return;
 
     const currentUser = currentUserStore.get();
@@ -47,32 +64,40 @@ export function OrderDetailsPage() {
       return;
     }
 
-    // Cascade delete: delete all related data
-    // 1. Delete all order lines
-    orderLineStore.deleteByOrderId(order.id);
+    try {
+      // Cascade delete: delete all related data
+      // 1. Delete all order lines
+      await orderLineStore.deleteByOrderId(order.id);
 
-    // 2. Delete all allocations
-    const allocations = allocationStore.getByOrderId(order.id);
-    allocations.forEach(allocation => allocationStore.delete(allocation.id));
+      // 2. Delete all allocations
+      const allocations = await allocationStore.getByOrderId(order.id);
+      for (const allocation of allocations) {
+        await allocationStore.delete(allocation.id);
+      }
 
-    // 3. Delete all payments
-    const payments = paymentStore.getByOrderId(order.id);
-    payments.forEach(payment => paymentStore.delete(payment.id));
+      // 3. Delete all payments
+      const payments = await paymentStore.getByOrderId(order.id);
+      for (const payment of payments) {
+        await paymentStore.delete(payment.id);
+      }
 
-    // 4. Delete the order itself
-    orderStore.delete(order.id);
+      // 4. Delete the order itself
+      await orderStore.delete(order.id);
 
-    // 5. Create audit log
-    auditLogStore.create({
-      action: 'DELETE',
-      entityType: 'Order',
-      entityId: order.id,
-      userId: currentUser?.id || '',
-      details: { orderNumber: order.orderNumber },
-    });
+      // 5. Create audit log
+      await auditLogStore.create({
+        action: 'DELETE',
+        entityType: 'Order',
+        entityId: order.id,
+        userId: currentUser?.id || '',
+        details: { orderNumber: order.orderNumber },
+      });
 
-    showToast('success', 'Заказ удален');
-    navigate('/orders');
+      showToast('success', 'Заказ удален');
+      navigate('/orders');
+    } catch (error) {
+      showToast('error', 'Ошибка при удалении заказа');
+    }
   };
 
   // Group order lines by container
@@ -99,6 +124,17 @@ export function OrderDetailsPage() {
     groupedContainers.sort((a, b) => a.index - b.index);
   }
 
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <span className="ml-3 text-gray-600">Загрузка...</span>
+        </div>
+      </Layout>
+    );
+  }
+
   if (!order) {
     return (
       <Layout>
@@ -116,7 +152,7 @@ export function OrderDetailsPage() {
     {
       key: 'itemId',
       label: 'Позиция',
-      render: (value: string) => itemStore.getById(value)?.name || '-',
+      render: (value: string) => items.find(i => i.id === value)?.name || '-',
     },
     {
       key: 'quantity',
@@ -250,7 +286,7 @@ export function OrderDetailsPage() {
                           {container.lines.map((line) => (
                             <tr key={line.id} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-2 text-sm text-gray-900">
-                                {itemStore.getById(line.itemId)?.name || '-'}
+                                {items.find(i => i.id === line.itemId)?.name || '-'}
                               </td>
                               <td className="px-4 py-2 text-sm text-gray-900">
                                 {formatNumber(line.quantity)}
