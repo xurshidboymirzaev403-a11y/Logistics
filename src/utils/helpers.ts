@@ -2,6 +2,7 @@ import type { Unit, OrderLine, Allocation } from '../types';
 
 // Constants
 export const TONS_IN_CONTAINER_DEFAULT = 28;
+export const TONS_PER_CONTAINER = 28; // Standard container size for display
 export const KG_IN_TON = 1000;
 
 // Convert any unit to tons
@@ -25,6 +26,12 @@ export function toKg(tons: number): number {
 // Format number (remove trailing zeros)
 export function formatNumber(value: number): string {
   return parseFloat(value.toFixed(3)).toString();
+}
+
+// Format tons with containers (using standard 28 tons per container)
+export function formatTonsWithContainers(tons: number): string {
+  const containers = tons / TONS_PER_CONTAINER;
+  return `${formatNumber(tons)} т (≈ ${formatNumber(containers)} конт.)`;
 }
 
 // Validate distribution - check if all order lines are fully distributed
