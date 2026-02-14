@@ -29,40 +29,20 @@ export function DistributionPage() {
   const [order, setOrder] = useState<Order | undefined>();
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   
+  const suppliers = supplierStore.getAll();
   const currentUser = currentUserStore.get();
 
   useEffect(() => {
-    const loadData = async () => {
-      if (orderId) {
-        try {
-          setLoading(true);
-          const foundOrder = await orderStore.getById(orderId);
-          setOrder(foundOrder);
-          
-          if (foundOrder) {
-            const [lines, allocs, supps, itms] = await Promise.all([
-              orderLineStore.getByOrderId(orderId),
-              allocationStore.getByOrderId(orderId),
-              supplierStore.getAll(),
-              itemStore.getAll()
-            ]);
-            setOrderLines(lines);
-            setAllocations(allocs);
-            setSuppliers(supps);
-            setItems(itms);
-          }
-        } catch (error) {
-          showToast('error', 'Ошибка загрузки данных');
-        } finally {
-          setLoading(false);
-        }
+    if (orderId) {
+      const foundOrder = orderStore.getById(orderId);
+      setOrder(foundOrder);
+      
+      if (foundOrder) {
+        setOrderLines(orderLineStore.getByOrderId(orderId));
+        setAllocations(allocationStore.getByOrderId(orderId));
       }
-    };
-    loadData();
+    }
   }, [orderId]);
 
   const [newAllocation, setNewAllocation] = useState<{
@@ -83,7 +63,7 @@ export function DistributionPage() {
     containerSize: TONS_IN_CONTAINER_DEFAULT,
   });
 
-  const handleAddAllocation = async (orderLineId: string) => {
+  const handleAddAllocation = (orderLineId: string) => {
     if (!newAllocation.supplierId || !newAllocation.quantity || !newAllocation.pricePerTon) {
       showToast('warning', 'Заполните все поля');
       return;
@@ -113,58 +93,50 @@ export function DistributionPage() {
 
     const totalSum = quantityInTons * price;
 
-    try {
-      const allocation = await allocationStore.create({
-        orderId: order!.id,
-        orderLineId,
-        supplierId: newAllocation.supplierId,
-        itemId: orderLine.itemId,
-        quantity: qty,
-        unit: newAllocation.unit,
-        quantityInTons,
-        pricePerTon: price,
-        totalSum,
-        currency: newAllocation.currency,
-        containerSize: newAllocation.unit === 'конт.' ? newAllocation.containerSize : undefined,
-      });
+    const allocation = allocationStore.create({
+      orderId: order!.id,
+      orderLineId,
+      supplierId: newAllocation.supplierId,
+      itemId: orderLine.itemId,
+      quantity: qty,
+      unit: newAllocation.unit,
+      quantityInTons,
+      pricePerTon: price,
+      totalSum,
+      currency: newAllocation.currency,
+      containerSize: newAllocation.unit === 'конт.' ? newAllocation.containerSize : undefined,
+    });
 
-      await auditLogStore.create({
-        action: 'CREATE',
-        entityType: 'Allocation',
-        entityId: allocation.id,
-        userId: currentUser?.id || '',
-        details: { orderNumber: order?.orderNumber, itemId: orderLine.itemId },
-      });
+    auditLogStore.create({
+      action: 'CREATE',
+      entityType: 'Allocation',
+      entityId: allocation.id,
+      userId: currentUser?.id || '',
+      details: { orderNumber: order?.orderNumber, itemId: orderLine.itemId },
+    });
 
-      setAllocations(await allocationStore.getByOrderId(orderId!));
-      setNewAllocation({
-        orderLineId: '',
-        supplierId: '',
-        quantity: '',
-        unit: 'т',
-        pricePerTon: '',
-        currency: 'USD',
-        containerSize: TONS_IN_CONTAINER_DEFAULT,
-      });
-      showToast('success', 'Распределение добавлено');
-    } catch (error) {
-      showToast('error', 'Ошибка при добавлении распределения');
-    }
+    setAllocations(allocationStore.getByOrderId(orderId!));
+    setNewAllocation({
+      orderLineId: '',
+      supplierId: '',
+      quantity: '',
+      unit: 'т',
+      pricePerTon: '',
+      currency: 'USD',
+      containerSize: TONS_IN_CONTAINER_DEFAULT,
+    });
+    showToast('success', 'Распределение добавлено');
   };
 
-  const handleDeleteAllocation = async (allocationId: string) => {
+  const handleDeleteAllocation = (allocationId: string) => {
     if (!confirm('Удалить распределение?')) return;
     
-    try {
-      await allocationStore.delete(allocationId);
-      setAllocations(await allocationStore.getByOrderId(orderId!));
-      showToast('success', 'Распределение удалено');
-    } catch (error) {
-      showToast('error', 'Ошибка при удалении распределения');
-    }
+    allocationStore.delete(allocationId);
+    setAllocations(allocationStore.getByOrderId(orderId!));
+    showToast('success', 'Распределение удалено');
   };
 
-  const handleCompleteDistribution = async () => {
+  const handleCompleteDistribution = () => {
     // Check all lines are fully distributed
     for (const line of orderLines) {
       const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
@@ -176,33 +148,18 @@ export function DistributionPage() {
       }
     }
 
-    try {
-      await orderStore.update(order!.id, { status: 'financial' });
-      await auditLogStore.create({
-        action: 'UPDATE',
-        entityType: 'Order',
-        entityId: order!.id,
-        userId: currentUser?.id || '',
-        details: { status: 'financial', orderNumber: order?.orderNumber },
-      });
-      
-      showToast('success', 'Заказ переведен в финансы');
-      navigate('/finance');
-    } catch (error) {
-      showToast('error', 'Ошибка при переводе заказа в финансы');
-    }
+    orderStore.update(order!.id, { status: 'financial' });
+    auditLogStore.create({
+      action: 'UPDATE',
+      entityType: 'Order',
+      entityId: order!.id,
+      userId: currentUser?.id || '',
+      details: { status: 'financial', orderNumber: order?.orderNumber },
+    });
+    
+    showToast('success', 'Заказ переведен в финансы');
+    navigate('/finance');
   };
-
-  if (loading) {
-    return (
-      <Layout>
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-gray-600">Загрузка...</span>
-        </div>
-      </Layout>
-    );
-  }
 
   if (!order) {
     return (
@@ -244,7 +201,7 @@ export function DistributionPage() {
 
         {/* Order Lines */}
         {orderLines.map((line) => {
-          const item = items.find(i => i.id === line.itemId);
+          const item = itemStore.getById(line.itemId);
           const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
           const { allocated, remainder } = validateDistribution(line, lineAllocations);
           const isFullyDistributed = Math.abs(remainder) < 0.001;
@@ -284,7 +241,7 @@ export function DistributionPage() {
                     </thead>
                     <tbody className="divide-y">
                       {lineAllocations.map((alloc) => {
-                        const supplier = suppliers.find(s => s.id === alloc.supplierId);
+                        const supplier = supplierStore.getById(alloc.supplierId);
                         return (
                           <tr key={alloc.id}>
                             <td className="px-3 py-2">{supplier?.name}</td>
@@ -419,7 +376,7 @@ export function DistributionPage() {
                     return acc;
                   }, {} as Record<string, { USD: number; UZS: number }>)
                 ).map(([supplierId, sums]) => {
-                  const supplier = suppliers.find(s => s.id === supplierId);
+                  const supplier = supplierStore.getById(supplierId);
                   return (
                     <tr key={supplierId}>
                       <td className="px-4 py-2 font-medium">{supplier?.name}</td>
