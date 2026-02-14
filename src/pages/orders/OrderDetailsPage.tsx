@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
-import { orderStore, orderLineStore, itemStore } from '../../store';
+import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore, itemStore } from '../../store';
+import { showToast } from '../../components/ui/Toast';
 import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT } from '../../utils/helpers';
 import type { Order, OrderLine } from '../../types';
 
@@ -18,6 +19,7 @@ export function OrderDetailsPage() {
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | undefined>();
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
+  const isAdminMode = adminModeStore.get();
 
   useEffect(() => {
     if (orderId) {
@@ -29,6 +31,49 @@ export function OrderDetailsPage() {
       }
     }
   }, [orderId]);
+
+  const handleDelete = () => {
+    if (!order) return;
+
+    const currentUser = currentUserStore.get();
+    const isAdminModeActive = adminModeStore.get();
+
+    if (!isAdminModeActive) {
+      showToast('error', 'Включите режим администратора для удаления');
+      return;
+    }
+
+    if (!confirm(`Удалить заказ "${order.orderNumber}"?`)) {
+      return;
+    }
+
+    // Cascade delete: delete all related data
+    // 1. Delete all order lines
+    orderLineStore.deleteByOrderId(order.id);
+
+    // 2. Delete all allocations
+    const allocations = allocationStore.getByOrderId(order.id);
+    allocations.forEach(allocation => allocationStore.delete(allocation.id));
+
+    // 3. Delete all payments
+    const payments = paymentStore.getByOrderId(order.id);
+    payments.forEach(payment => paymentStore.delete(payment.id));
+
+    // 4. Delete the order itself
+    orderStore.delete(order.id);
+
+    // 5. Create audit log
+    auditLogStore.create({
+      action: 'DELETE',
+      entityType: 'Order',
+      entityId: order.id,
+      userId: currentUser?.id || '',
+      details: { orderNumber: order.orderNumber },
+    });
+
+    showToast('success', 'Заказ удален');
+    navigate('/orders');
+  };
 
   // Group order lines by container
   const groupedContainers: GroupedContainer[] = [];
@@ -108,6 +153,11 @@ export function OrderDetailsPage() {
             {order.status === 'locked' && (
               <Button onClick={() => navigate(`/distribution/${order.id}`)}>
                 Распределить
+              </Button>
+            )}
+            {isAdminMode && (
+              <Button variant="danger" onClick={handleDelete}>
+                🗑️ Удалить заказ
               </Button>
             )}
             <Button variant="secondary" onClick={() => navigate('/orders')}>
