@@ -447,51 +447,43 @@ export async function importData(jsonString: string): Promise<boolean> {
     
     // Import in correct order (respecting foreign keys)
     if (data.USERS && data.USERS.length > 0) {
-      for (const user of data.USERS) {
-        await supabase.from('users').insert(toSnakeCase(user));
-      }
+      const snakeUsers = data.USERS.map((user: any) => toSnakeCase(user));
+      await supabase.from('users').insert(snakeUsers);
     }
     
     if (data.ITEMS && data.ITEMS.length > 0) {
-      for (const item of data.ITEMS) {
-        await supabase.from('items').insert(toSnakeCase(item));
-      }
+      const snakeItems = data.ITEMS.map((item: any) => toSnakeCase(item));
+      await supabase.from('items').insert(snakeItems);
     }
     
     if (data.SUPPLIERS && data.SUPPLIERS.length > 0) {
-      for (const supplier of data.SUPPLIERS) {
-        await supabase.from('suppliers').insert(toSnakeCase(supplier));
-      }
+      const snakeSuppliers = data.SUPPLIERS.map((supplier: any) => toSnakeCase(supplier));
+      await supabase.from('suppliers').insert(snakeSuppliers);
     }
     
     if (data.ORDERS && data.ORDERS.length > 0) {
-      for (const order of data.ORDERS) {
-        await supabase.from('orders').insert(toSnakeCase(order));
-      }
+      const snakeOrders = data.ORDERS.map((order: any) => toSnakeCase(order));
+      await supabase.from('orders').insert(snakeOrders);
     }
     
     if (data.ORDER_LINES && data.ORDER_LINES.length > 0) {
-      for (const line of data.ORDER_LINES) {
-        await supabase.from('order_lines').insert(toSnakeCase(line));
-      }
+      const snakeLines = data.ORDER_LINES.map((line: any) => toSnakeCase(line));
+      await supabase.from('order_lines').insert(snakeLines);
     }
     
     if (data.ALLOCATIONS && data.ALLOCATIONS.length > 0) {
-      for (const allocation of data.ALLOCATIONS) {
-        await supabase.from('allocations').insert(toSnakeCase(allocation));
-      }
+      const snakeAllocations = data.ALLOCATIONS.map((allocation: any) => toSnakeCase(allocation));
+      await supabase.from('allocations').insert(snakeAllocations);
     }
     
     if (data.PAYMENTS && data.PAYMENTS.length > 0) {
-      for (const payment of data.PAYMENTS) {
-        await supabase.from('payments').insert(toSnakeCase(payment));
-      }
+      const snakePayments = data.PAYMENTS.map((payment: any) => toSnakeCase(payment));
+      await supabase.from('payments').insert(snakePayments);
     }
     
     if (data.AUDIT_LOGS && data.AUDIT_LOGS.length > 0) {
-      for (const log of data.AUDIT_LOGS) {
-        await supabase.from('audit_logs').insert(toSnakeCase(log));
-      }
+      const snakeLogs = data.AUDIT_LOGS.map((log: any) => toSnakeCase(log));
+      await supabase.from('audit_logs').insert(snakeLogs);
     }
     
     return true;
