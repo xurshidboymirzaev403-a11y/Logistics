@@ -23,6 +23,8 @@ export function FinancePage() {
   const [order, setOrder] = useState<Order | undefined>();
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [payments, setPayments] = useState<PaymentOperation[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isPercentageModalOpen, setIsPercentageModalOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
@@ -47,15 +49,31 @@ export function FinancePage() {
   const currentUser = currentUserStore.get();
 
   useEffect(() => {
-    if (orderId) {
-      const foundOrder = orderStore.getById(orderId);
-      setOrder(foundOrder);
+    const loadData = async () => {
+      if (orderId) {
+        try {
+          setLoading(true);
+          const foundOrder = await orderStore.getById(orderId);
+          setOrder(foundOrder);
 
-      if (foundOrder) {
-        setAllocations(allocationStore.getByOrderId(orderId));
-        setPayments(paymentStore.getByOrderId(orderId));
+          if (foundOrder) {
+            const [allocs, pays, supps] = await Promise.all([
+              allocationStore.getByOrderId(orderId),
+              paymentStore.getByOrderId(orderId),
+              supplierStore.getAll()
+            ]);
+            setAllocations(allocs);
+            setPayments(pays);
+            setSuppliers(supps);
+          }
+        } catch (error) {
+          showToast('error', 'Ошибка загрузки данных');
+        } finally {
+          setLoading(false);
+        }
       }
-    }
+    };
+    loadData();
   }, [orderId]);
 
   const handleOpenPaymentModal = (supplierId: string, type: 'PREPAYMENT' | 'PAYOFF', currency: Currency, defaultAmount?: number) => {
@@ -113,7 +131,7 @@ export function FinancePage() {
     });
   };
 
-  const handleSavePercentagePayment = () => {
+  const handleSavePercentagePayment = async () => {
     const percentage = parseFloat(percentageForm.percentage);
     
     if (isNaN(percentage) || percentage < 0.01 || percentage > 100) {
@@ -132,61 +150,80 @@ export function FinancePage() {
     const autoComment = percentageForm.comment || 
       `Оплата ${percentage}% от ${baseLabel} (${formatCurrency(amount, percentageForm.currency)})`;
 
-    const payment = paymentStore.create({
-      orderId: order!.id,
-      supplierId: percentageForm.supplierId,
-      type: 'PREPAYMENT',
-      amount: amount,
-      currency: percentageForm.currency,
-      date: percentageForm.date,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.id || '',
-      comment: autoComment,
-    });
+    try {
+      const payment = await paymentStore.create({
+        orderId: order!.id,
+        supplierId: percentageForm.supplierId,
+        type: 'PREPAYMENT',
+        amount: amount,
+        currency: percentageForm.currency,
+        date: percentageForm.date,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser?.id || '',
+        comment: autoComment,
+      });
 
-    auditLogStore.create({
-      action: 'CREATE',
-      entityType: 'Payment',
-      entityId: payment.id,
-      userId: currentUser?.id || '',
-      details: { orderNumber: order?.orderNumber, type: 'PREPAYMENT', amount: amount, percentage: percentage },
-    });
+      await auditLogStore.create({
+        action: 'CREATE',
+        entityType: 'Payment',
+        entityId: payment.id,
+        userId: currentUser?.id || '',
+        details: { orderNumber: order?.orderNumber, type: 'PREPAYMENT', amount: amount, percentage: percentage },
+      });
 
-    setPayments(paymentStore.getByOrderId(orderId!));
-    showToast('success', 'Платеж добавлен');
-    handleClosePercentageModal();
+      setPayments(await paymentStore.getByOrderId(orderId!));
+      showToast('success', 'Платеж добавлен');
+      handleClosePercentageModal();
+    } catch (error) {
+      showToast('error', 'Ошибка при добавлении платежа');
+    }
   };
 
-  const handleSavePayment = () => {
+  const handleSavePayment = async () => {
     if (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0) {
       showToast('warning', 'Введите корректную сумму');
       return;
     }
 
-    const payment = paymentStore.create({
-      orderId: order!.id,
-      supplierId: paymentForm.supplierId,
-      type: paymentForm.type,
-      amount: parseFloat(paymentForm.amount),
-      currency: paymentForm.currency,
-      date: paymentForm.date,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.id || '',
-      comment: paymentForm.comment,
-    });
+    try {
+      const payment = await paymentStore.create({
+        orderId: order!.id,
+        supplierId: paymentForm.supplierId,
+        type: paymentForm.type,
+        amount: parseFloat(paymentForm.amount),
+        currency: paymentForm.currency,
+        date: paymentForm.date,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser?.id || '',
+        comment: paymentForm.comment,
+      });
 
-    auditLogStore.create({
-      action: 'CREATE',
-      entityType: 'Payment',
-      entityId: payment.id,
-      userId: currentUser?.id || '',
-      details: { orderNumber: order?.orderNumber, type: paymentForm.type, amount: paymentForm.amount },
-    });
+      await auditLogStore.create({
+        action: 'CREATE',
+        entityType: 'Payment',
+        entityId: payment.id,
+        userId: currentUser?.id || '',
+        details: { orderNumber: order?.orderNumber, type: paymentForm.type, amount: paymentForm.amount },
+      });
 
-    setPayments(paymentStore.getByOrderId(orderId!));
-    showToast('success', 'Платеж добавлен');
-    handleClosePaymentModal();
+      setPayments(await paymentStore.getByOrderId(orderId!));
+      showToast('success', 'Платеж добавлен');
+      handleClosePaymentModal();
+    } catch (error) {
+      showToast('error', 'Ошибка при добавлении платежа');
+    }
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <span className="ml-3 text-gray-600">Загрузка...</span>
+        </div>
+      </Layout>
+    );
+  }
 
   if (!order) {
     return (
@@ -229,7 +266,7 @@ export function FinancePage() {
 
         {/* Suppliers */}
         {Object.values(supplierGroups).map((group) => {
-          const supplier = supplierStore.getById(group.supplierId);
+          const supplier = suppliers.find(s => s.id === group.supplierId);
           const supplierPayments = payments.filter(
             (p) => p.supplierId === group.supplierId && p.currency === group.currency
           );
@@ -359,7 +396,7 @@ export function FinancePage() {
                   {payments
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                     .map((payment) => {
-                      const supplier = supplierStore.getById(payment.supplierId);
+                      const supplier = suppliers.find(s => s.id === payment.supplierId);
                       return (
                         <tr key={payment.id}>
                           <td className="px-3 py-2">{formatDateTime(payment.date)}</td>

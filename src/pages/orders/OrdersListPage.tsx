@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
@@ -10,10 +10,21 @@ import type { Order } from '../../types';
 
 export function OrdersListPage() {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState(orderStore.getAll());
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
   const isAdminMode = adminModeStore.get();
 
-  const handleDelete = (order: Order) => {
+  useEffect(() => {
+    const loadOrders = async () => {
+      setLoading(true);
+      const data = await orderStore.getAll();
+      setOrders(data);
+      setLoading(false);
+    };
+    loadOrders();
+  }, []);
+
+  const handleDelete = async (order: Order) => {
     const currentUser = currentUserStore.get();
     const isAdminModeActive = adminModeStore.get();
 
@@ -26,33 +37,39 @@ export function OrdersListPage() {
       return;
     }
 
-    // Cascade delete: delete all related data
-    // 1. Delete all order lines
-    orderLineStore.deleteByOrderId(order.id);
+    try {
+      // Cascade delete: delete all related data
+      // 1. Delete all order lines
+      await orderLineStore.deleteByOrderId(order.id);
 
-    // 2. Delete all allocations
-    const allocations = allocationStore.getByOrderId(order.id);
-    allocations.forEach(allocation => allocationStore.delete(allocation.id));
+      // 2. Delete all allocations
+      const allocations = await allocationStore.getByOrderId(order.id);
+      await Promise.all(allocations.map(allocation => allocationStore.delete(allocation.id)));
 
-    // 3. Delete all payments
-    const payments = paymentStore.getByOrderId(order.id);
-    payments.forEach(payment => paymentStore.delete(payment.id));
+      // 3. Delete all payments
+      const payments = await paymentStore.getByOrderId(order.id);
+      await Promise.all(payments.map(payment => paymentStore.delete(payment.id)));
 
-    // 4. Delete the order itself
-    orderStore.delete(order.id);
+      // 4. Delete the order itself
+      await orderStore.delete(order.id);
 
-    // 5. Create audit log
-    auditLogStore.create({
-      action: 'DELETE',
-      entityType: 'Order',
-      entityId: order.id,
-      userId: currentUser?.id || '',
-      details: { orderNumber: order.orderNumber },
-    });
+      // 5. Create audit log
+      await auditLogStore.create({
+        action: 'DELETE',
+        entityType: 'Order',
+        entityId: order.id,
+        userId: currentUser?.id || '',
+        details: { orderNumber: order.orderNumber },
+      });
 
-    // Update the list
-    setOrders(orderStore.getAll());
-    showToast('success', 'Заказ удален');
+      // Update the list
+      const data = await orderStore.getAll();
+      setOrders(data);
+      showToast('success', 'Заказ удален');
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      showToast('error', 'Ошибка при удалении заказа');
+    }
   };
 
   const columns = [
@@ -118,11 +135,18 @@ export function OrdersListPage() {
           </Button>
         </div>
 
-        <Table
-          columns={columns}
-          data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
-          emptyMessage="Нет заказов. Создайте первый заказ."
-        />
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-600">Загрузка...</span>
+          </div>
+        ) : (
+          <Table
+            columns={columns}
+            data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
+            emptyMessage="Нет заказов. Создайте первый заказ."
+          />
+        )}
       </div>
     </Layout>
   );

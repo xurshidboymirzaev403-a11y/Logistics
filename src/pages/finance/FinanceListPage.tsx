@@ -1,16 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
 import { orderStore } from '../../store';
+import { showToast } from '../../components/ui/Toast';
 import { getOrderStatusLabel, getOrderStatusColor, formatDateTime } from '../../utils/helpers';
 
 export function FinanceListPage() {
   const navigate = useNavigate();
-  const [orders] = useState(
-    orderStore.getAll().filter((o) => ['financial', 'completed'].includes(o.status))
-  );
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const allOrders = await orderStore.getAll();
+        setOrders(allOrders.filter((o) => ['financial', 'completed'].includes(o.status)));
+      } catch (error) {
+        showToast('error', 'Ошибка загрузки данных');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const columns = [
     {
@@ -59,11 +74,18 @@ export function FinanceListPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Финансы</h1>
 
-        <Table
-          columns={columns}
-          data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
-          emptyMessage="Нет заказов в финансовой обработке"
-        />
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-600">Загрузка...</span>
+          </div>
+        ) : (
+          <Table
+            columns={columns}
+            data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
+            emptyMessage="Нет заказов в финансовой обработке"
+          />
+        )}
       </div>
     </Layout>
   );

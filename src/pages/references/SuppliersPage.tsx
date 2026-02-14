@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -10,7 +10,8 @@ import { supplierStore, auditLogStore, currentUserStore, adminModeStore } from '
 import type { Supplier } from '../../types';
 
 export function SuppliersPage() {
-  const [suppliers, setSuppliers] = useState(supplierStore.getAll());
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState({
@@ -21,6 +22,20 @@ export function SuppliersPage() {
 
   const isAdminMode = adminModeStore.get();
   const currentUser = currentUserStore.get();
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setSuppliers(await supplierStore.getAll());
+      } catch (error) {
+        showToast('error', 'Ошибка загрузки данных');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const handleOpenModal = (supplier?: Supplier) => {
     if (supplier) {
@@ -46,43 +61,47 @@ export function SuppliersPage() {
     setEditingSupplier(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       showToast('warning', 'Введите название поставщика');
       return;
     }
 
-    if (editingSupplier) {
-      if (!isAdminMode) {
-        showToast('error', 'Включите режим администратора для редактирования');
-        return;
+    try {
+      if (editingSupplier) {
+        if (!isAdminMode) {
+          showToast('error', 'Включите режим администратора для редактирования');
+          return;
+        }
+        await supplierStore.update(editingSupplier.id, formData);
+        await auditLogStore.create({
+          action: 'UPDATE',
+          entityType: 'Supplier',
+          entityId: editingSupplier.id,
+          userId: currentUser?.id || '',
+          details: formData,
+        });
+        showToast('success', 'Поставщик обновлен');
+      } else {
+        const newSupplier = await supplierStore.create(formData);
+        await auditLogStore.create({
+          action: 'CREATE',
+          entityType: 'Supplier',
+          entityId: newSupplier.id,
+          userId: currentUser?.id || '',
+          details: formData,
+        });
+        showToast('success', 'Поставщик создан');
       }
-      supplierStore.update(editingSupplier.id, formData);
-      auditLogStore.create({
-        action: 'UPDATE',
-        entityType: 'Supplier',
-        entityId: editingSupplier.id,
-        userId: currentUser?.id || '',
-        details: formData,
-      });
-      showToast('success', 'Поставщик обновлен');
-    } else {
-      const newSupplier = supplierStore.create(formData);
-      auditLogStore.create({
-        action: 'CREATE',
-        entityType: 'Supplier',
-        entityId: newSupplier.id,
-        userId: currentUser?.id || '',
-        details: formData,
-      });
-      showToast('success', 'Поставщик создан');
-    }
 
-    setSuppliers(supplierStore.getAll());
-    handleCloseModal();
+      setSuppliers(await supplierStore.getAll());
+      handleCloseModal();
+    } catch (error) {
+      showToast('error', 'Ошибка при сохранении поставщика');
+    }
   };
 
-  const handleDelete = (supplier: Supplier) => {
+  const handleDelete = async (supplier: Supplier) => {
     if (!isAdminMode) {
       showToast('error', 'Включите режим администратора для удаления');
       return;
@@ -92,16 +111,20 @@ export function SuppliersPage() {
       return;
     }
 
-    supplierStore.delete(supplier.id);
-    auditLogStore.create({
-      action: 'DELETE',
-      entityType: 'Supplier',
-      entityId: supplier.id,
-      userId: currentUser?.id || '',
-      details: { name: supplier.name },
-    });
-    setSuppliers(supplierStore.getAll());
-    showToast('success', 'Поставщик удален');
+    try {
+      await supplierStore.delete(supplier.id);
+      await auditLogStore.create({
+        action: 'DELETE',
+        entityType: 'Supplier',
+        entityId: supplier.id,
+        userId: currentUser?.id || '',
+        details: { name: supplier.name },
+      });
+      setSuppliers(await supplierStore.getAll());
+      showToast('success', 'Поставщик удален');
+    } catch (error) {
+      showToast('error', 'Ошибка при удалении поставщика');
+    }
   };
 
   const columns = [
@@ -158,7 +181,14 @@ export function SuppliersPage() {
           </Button>
         </div>
 
-        <Table columns={columns} data={suppliers} emptyMessage="Нет поставщиков. Добавьте первого поставщика." />
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-600">Загрузка...</span>
+          </div>
+        ) : (
+          <Table columns={columns} data={suppliers} emptyMessage="Нет поставщиков. Добавьте первого поставщика." />
+        )}
 
         {/* Modal */}
         <Modal
