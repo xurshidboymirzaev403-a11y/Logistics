@@ -21,12 +21,16 @@ export function DistributionListPage() {
         const filteredOrders = allOrders.filter((o) => ['locked', 'distributed', 'financial', 'completed'].includes(o.status));
         setOrders(filteredOrders);
         
-        // Load line counts for each order
-        const counts: Record<string, number> = {};
-        for (const order of filteredOrders) {
+        // Load line counts for each order in parallel
+        const countPromises = filteredOrders.map(async (order) => {
           const lines = await orderLineStore.getByOrderId(order.id);
-          counts[order.id] = lines.length;
-        }
+          return { orderId: order.id, count: lines.length };
+        });
+        const countResults = await Promise.all(countPromises);
+        const counts: Record<string, number> = {};
+        countResults.forEach(({ orderId, count }) => {
+          counts[orderId] = count;
+        });
         setOrderLineCounts(counts);
       } catch (error) {
         showToast('error', 'Ошибка загрузки данных');
