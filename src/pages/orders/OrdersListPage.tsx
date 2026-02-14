@@ -2,13 +2,55 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
-import { orderStore } from '../../store';
+import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore } from '../../store';
 import { Table } from '../../components/ui/Table';
+import { showToast } from '../../components/ui/Toast';
 import { getOrderStatusLabel, getOrderStatusColor, formatDateTime } from '../../utils/helpers';
 
 export function OrdersListPage() {
   const navigate = useNavigate();
-  const [orders] = useState(orderStore.getAll());
+  const [orders, setOrders] = useState(orderStore.getAll());
+  const isAdminMode = adminModeStore.get();
+  const currentUser = currentUserStore.get();
+
+  const handleDelete = (order: any) => {
+    if (!isAdminMode) {
+      showToast('error', 'Включите режим администратора для удаления');
+      return;
+    }
+
+    if (!confirm(`Удалить заказ "${order.orderNumber}"?`)) {
+      return;
+    }
+
+    // Cascade delete: delete all related data
+    // 1. Delete all order lines
+    orderLineStore.deleteByOrderId(order.id);
+
+    // 2. Delete all allocations
+    const allocations = allocationStore.getByOrderId(order.id);
+    allocations.forEach(allocation => allocationStore.delete(allocation.id));
+
+    // 3. Delete all payments
+    const payments = paymentStore.getByOrderId(order.id);
+    payments.forEach(payment => paymentStore.delete(payment.id));
+
+    // 4. Delete the order itself
+    orderStore.delete(order.id);
+
+    // 5. Create audit log
+    auditLogStore.create({
+      action: 'DELETE',
+      entityType: 'Order',
+      entityId: order.id,
+      userId: currentUser?.id || '',
+      details: { orderNumber: order.orderNumber },
+    });
+
+    // Update the list
+    setOrders(orderStore.getAll());
+    showToast('success', 'Заказ удален');
+  };
 
   const columns = [
     {
@@ -49,6 +91,15 @@ export function OrdersListPage() {
           >
             Открыть
           </Button>
+          {isAdminMode && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => handleDelete(row)}
+            >
+              🗑️
+            </Button>
+          )}
         </div>
       ),
     },
