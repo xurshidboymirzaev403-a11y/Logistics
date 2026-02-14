@@ -6,15 +6,18 @@ import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStor
 import { Table } from '../../components/ui/Table';
 import { showToast } from '../../components/ui/Toast';
 import { getOrderStatusLabel, getOrderStatusColor, formatDateTime } from '../../utils/helpers';
+import type { Order } from '../../types';
 
 export function OrdersListPage() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState(orderStore.getAll());
   const isAdminMode = adminModeStore.get();
-  const currentUser = currentUserStore.get();
 
-  const handleDelete = (order: any) => {
-    if (!isAdminMode) {
+  const handleDelete = (order: Order) => {
+    const currentUser = currentUserStore.get();
+    const isAdminModeActive = adminModeStore.get();
+
+    if (!isAdminModeActive) {
       showToast('error', 'Включите режим администратора для удаления');
       return;
     }

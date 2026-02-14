@@ -20,7 +20,6 @@ export function OrderDetailsPage() {
   const [order, setOrder] = useState<Order | undefined>();
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
   const isAdminMode = adminModeStore.get();
-  const currentUser = currentUserStore.get();
 
   useEffect(() => {
     if (orderId) {
@@ -36,7 +35,10 @@ export function OrderDetailsPage() {
   const handleDelete = () => {
     if (!order) return;
 
-    if (!isAdminMode) {
+    const currentUser = currentUserStore.get();
+    const isAdminModeActive = adminModeStore.get();
+
+    if (!isAdminModeActive) {
       showToast('error', 'Включите режим администратора для удаления');
       return;
     }
