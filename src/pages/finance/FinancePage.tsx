@@ -24,11 +24,22 @@ export function FinancePage() {
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [payments, setPayments] = useState<PaymentOperation[]>([]);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isPercentageModalOpen, setIsPercentageModalOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
     supplierId: '',
     type: 'PREPAYMENT' as 'PREPAYMENT' | 'PAYOFF',
     amount: '',
     currency: 'USD' as Currency,
+    date: getTodayDate(),
+    comment: '',
+  });
+  const [percentageForm, setPercentageForm] = useState({
+    supplierId: '',
+    currency: 'USD' as Currency,
+    percentage: '',
+    calculationBase: 'remaining' as 'remaining' | 'total',
+    totalAmount: 0,
+    remainingAmount: 0,
     date: getTodayDate(),
     comment: '',
   });
@@ -61,6 +72,94 @@ export function FinancePage() {
 
   const handleClosePaymentModal = () => {
     setIsPaymentModalOpen(false);
+  };
+
+  const handleOpenPercentageModal = (supplierId: string, currency: Currency, totalAmount: number, remainingAmount: number) => {
+    setPercentageForm({
+      supplierId,
+      currency,
+      percentage: '',
+      calculationBase: 'remaining',
+      totalAmount,
+      remainingAmount,
+      date: getTodayDate(),
+      comment: '',
+    });
+    setIsPercentageModalOpen(true);
+  };
+
+  const handleClosePercentageModal = () => {
+    setIsPercentageModalOpen(false);
+  };
+
+  const calculatePercentageAmount = () => {
+    const percentage = parseFloat(percentageForm.percentage);
+    if (isNaN(percentage) || percentage <= 0) return 0;
+
+    const baseAmount = percentageForm.calculationBase === 'remaining' 
+      ? percentageForm.remainingAmount 
+      : percentageForm.totalAmount;
+
+    const calculatedAmount = (baseAmount * percentage) / 100;
+
+    // Cap at remaining amount
+    return Math.min(calculatedAmount, percentageForm.remainingAmount);
+  };
+
+  const handleQuickPercentage = (percentage: number) => {
+    setPercentageForm({
+      ...percentageForm,
+      percentage: percentage.toString(),
+    });
+  };
+
+  const handleSavePercentagePayment = () => {
+    const percentage = parseFloat(percentageForm.percentage);
+    
+    if (isNaN(percentage) || percentage < 0.01 || percentage > 100) {
+      showToast('warning', 'Введите процент от 0.01 до 100');
+      return;
+    }
+
+    const amount = calculatePercentageAmount();
+    
+    if (amount <= 0) {
+      showToast('warning', 'Введите корректный процент');
+      return;
+    }
+
+    if (amount > percentageForm.remainingAmount) {
+      showToast('warning', 'Сумма превышает остаток');
+      return;
+    }
+
+    const baseLabel = percentageForm.calculationBase === 'remaining' ? 'остатка' : 'общей суммы';
+    const autoComment = percentageForm.comment || 
+      `Оплата ${percentage}% от ${baseLabel} (${formatCurrency(amount, percentageForm.currency)})`;
+
+    const payment = paymentStore.create({
+      orderId: order!.id,
+      supplierId: percentageForm.supplierId,
+      type: 'PREPAYMENT',
+      amount: amount,
+      currency: percentageForm.currency,
+      date: percentageForm.date,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.id || '',
+      comment: autoComment,
+    });
+
+    auditLogStore.create({
+      action: 'CREATE',
+      entityType: 'Payment',
+      entityId: payment.id,
+      userId: currentUser?.id || '',
+      details: { orderNumber: order?.orderNumber, type: 'PREPAYMENT', amount: amount, percentage: percentage },
+    });
+
+    setPayments(paymentStore.getByOrderId(orderId!));
+    showToast('success', 'Платеж добавлен');
+    handleClosePercentageModal();
   };
 
   const handleSavePayment = () => {
@@ -233,6 +332,14 @@ export function FinancePage() {
                 >
                   Погасить
                 </Button>
+                <Button
+                  size="sm"
+                  variant="warning"
+                  onClick={() => handleOpenPercentageModal(group.supplierId, group.currency, group.total, remaining)}
+                  disabled={remaining <= 0}
+                >
+                  📊 Оплатить %
+                </Button>
               </div>
             </div>
           );
@@ -317,6 +424,144 @@ export function FinancePage() {
                 Отмена
               </Button>
               <Button onClick={handleSavePayment}>Сохранить</Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Percentage Payment Modal */}
+        <Modal
+          isOpen={isPercentageModalOpen}
+          onClose={handleClosePercentageModal}
+          title="Оплата по процентам"
+          icon="📊"
+          size="lg"
+        >
+          <div className="space-y-4">
+            {/* Quick percentage buttons */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Быстрый выбор:</label>
+              <div className="flex flex-wrap gap-2">
+                {[10, 20, 25, 30, 50, 70, 100].map((percent) => (
+                  <button
+                    key={percent}
+                    type="button"
+                    onClick={() => handleQuickPercentage(percent)}
+                    className={`
+                      px-4 py-2 rounded-full text-sm font-medium transition-all
+                      ${percentageForm.percentage === percent.toString()
+                        ? 'bg-blue-500 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }
+                    `}
+                  >
+                    {percent}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Percentage input */}
+            <Input
+              label="Процент (%) *"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max="100"
+              value={percentageForm.percentage}
+              onChange={(e) => setPercentageForm({ ...percentageForm, percentage: e.target.value })}
+              placeholder="0.00"
+              autoFocus
+            />
+
+            {/* Calculation base radio buttons */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Считать от:</label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="calculationBase"
+                    value="remaining"
+                    checked={percentageForm.calculationBase === 'remaining'}
+                    onChange={(e) => setPercentageForm({ ...percentageForm, calculationBase: e.target.value as 'remaining' | 'total' })}
+                    className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    От остатка ({formatCurrency(percentageForm.remainingAmount, percentageForm.currency)})
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="calculationBase"
+                    value="total"
+                    checked={percentageForm.calculationBase === 'total'}
+                    onChange={(e) => setPercentageForm({ ...percentageForm, calculationBase: e.target.value as 'remaining' | 'total' })}
+                    className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    От общей суммы ({formatCurrency(percentageForm.totalAmount, percentageForm.currency)})
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Amount preview */}
+            {percentageForm.percentage && parseFloat(percentageForm.percentage) > 0 && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">📊</span>
+                  <div className="text-sm text-gray-600">
+                    {percentageForm.percentage}% от{' '}
+                    {formatCurrency(
+                      percentageForm.calculationBase === 'remaining' 
+                        ? percentageForm.remainingAmount 
+                        : percentageForm.totalAmount,
+                      percentageForm.currency
+                    )}{' '}
+                    ={' '}
+                    <span className="font-bold text-lg text-blue-700">
+                      {formatCurrency(calculatePercentageAmount(), percentageForm.currency)}
+                    </span>
+                  </div>
+                </div>
+                {calculatePercentageAmount() > percentageForm.remainingAmount && (
+                  <p className="mt-2 text-sm text-red-600">
+                    ⚠️ Сумма превышает остаток и будет ограничена до{' '}
+                    {formatCurrency(percentageForm.remainingAmount, percentageForm.currency)}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Date */}
+            <Input
+              label="Дата *"
+              type="date"
+              value={percentageForm.date}
+              onChange={(e) => setPercentageForm({ ...percentageForm, date: e.target.value })}
+            />
+
+            {/* Comment */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий</label>
+              <textarea
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={2}
+                value={percentageForm.comment}
+                onChange={(e) => setPercentageForm({ ...percentageForm, comment: e.target.value })}
+                placeholder={`Оплата ${percentageForm.percentage || 'X'}% от ${percentageForm.calculationBase === 'remaining' ? 'остатка' : 'общей суммы'}`}
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="secondary" onClick={handleClosePercentageModal}>
+                Отмена
+              </Button>
+              <Button variant="success" onClick={handleSavePercentagePayment}>
+                💰 Оплатить
+              </Button>
             </div>
           </div>
         </Modal>
