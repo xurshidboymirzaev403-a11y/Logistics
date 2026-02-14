@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
@@ -28,7 +29,6 @@ export function OrderDetailsPage() {
 
   // Modal states for editing order lines
   const [isEditQuantityModalOpen, setIsEditQuantityModalOpen] = useState(false);
-  const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false);
   const [isAddPositionModalOpen, setIsAddPositionModalOpen] = useState(false);
   const [selectedLine, setSelectedLine] = useState<OrderLine | null>(null);
   
@@ -37,11 +37,15 @@ export function OrderDetailsPage() {
     quantityInTons: '',
   });
 
-  // Replace position form
-  const [replaceForm, setReplaceForm] = useState({
-    newItemId: '',
-    quantityInTons: '',
-  });
+  // Multi-replacement form for flexible replacement
+  interface ReplacementLine {
+    id: string;
+    itemId: string;
+    quantityInTons: string;
+  }
+  
+  const [multiReplaceForm, setMultiReplaceForm] = useState<ReplacementLine[]>([]);
+  const [isMultiReplaceModalOpen, setIsMultiReplaceModalOpen] = useState(false);
 
   // Add position form
   const [addPositionForm, setAddPositionForm] = useState({
@@ -239,44 +243,87 @@ export function OrderDetailsPage() {
     showToast('success', 'Позиция удалена');
   };
 
-  // Replace position handlers
-  const handleOpenReplace = (line: OrderLine) => {
+  // Multi-replacement handlers
+  const handleOpenMultiReplace = (line: OrderLine) => {
     setSelectedLine(line);
-    setReplaceForm({
-      newItemId: '',
-      quantityInTons: formatNumber(line.quantityInTons),
-    });
-    setIsReplaceModalOpen(true);
+    // Initialize with one empty line
+    setMultiReplaceForm([{
+      id: uuidv4(),
+      itemId: '',
+      quantityInTons: '',
+    }]);
+    setIsMultiReplaceModalOpen(true);
   };
 
-  const handleSaveReplace = () => {
+  const handleAddReplacementLine = () => {
+    setMultiReplaceForm([
+      ...multiReplaceForm,
+      {
+        id: uuidv4(),
+        itemId: '',
+        quantityInTons: '',
+      }
+    ]);
+  };
+
+  const handleRemoveReplacementLine = (id: string) => {
+    if (multiReplaceForm.length === 1) {
+      showToast('warning', 'Должна быть хотя бы одна позиция замены');
+      return;
+    }
+    setMultiReplaceForm(multiReplaceForm.filter(line => line.id !== id));
+  };
+
+  const handleUpdateReplacementLine = (id: string, field: 'itemId' | 'quantityInTons', value: string) => {
+    setMultiReplaceForm(multiReplaceForm.map(line => 
+      line.id === id ? { ...line, [field]: value } : line
+    ));
+  };
+
+  const handleSaveMultiReplace = () => {
     if (!selectedLine || !order) return;
 
     const currentUser = currentUserStore.get();
-    const newQuantityInTons = parseFloat(replaceForm.quantityInTons);
 
-    if (!replaceForm.newItemId) {
-      showToast('error', 'Выберите новую позицию');
+    // Validate all lines have item selected
+    const hasEmptyItem = multiReplaceForm.some(line => !line.itemId);
+    if (hasEmptyItem) {
+      showToast('error', 'Выберите позицию для всех строк');
       return;
     }
 
-    if (isNaN(newQuantityInTons) || newQuantityInTons <= 0) {
-      showToast('error', 'Введите корректное количество');
+    // Validate all lines have valid quantities
+    const parsedLines = multiReplaceForm.map(line => ({
+      ...line,
+      quantityInTonsParsed: parseFloat(line.quantityInTons),
+    }));
+
+    const hasInvalidQuantity = parsedLines.some(line => 
+      isNaN(line.quantityInTonsParsed) || line.quantityInTonsParsed <= 0
+    );
+    if (hasInvalidQuantity) {
+      showToast('error', 'Введите корректное количество для всех позиций');
       return;
     }
 
-    if (newQuantityInTons > selectedLine.quantityInTons) {
-      showToast('error', 'Количество не может превышать исходное');
+    // Calculate total
+    const totalNewQuantity = parsedLines.reduce((sum, line) => sum + line.quantityInTonsParsed, 0);
+
+    // Validate total doesn't exceed original
+    if (totalNewQuantity > selectedLine.quantityInTons + 0.001) {
+      showToast('error', `Общее количество (${formatNumber(totalNewQuantity)} т) превышает исходное (${formatNumber(selectedLine.quantityInTons)} т)`);
       return;
     }
 
     const oldItem = itemStore.getById(selectedLine.itemId);
-    const newItem = itemStore.getById(replaceForm.newItemId);
+    const remainder = selectedLine.quantityInTons - totalNewQuantity;
 
-    if (newQuantityInTons === selectedLine.quantityInTons) {
-      // Full replacement - just update the itemId
+    // If single replacement with same tonnage - simple update
+    if (parsedLines.length === 1 && Math.abs(totalNewQuantity - selectedLine.quantityInTons) < 0.001) {
+      const newItem = itemStore.getById(parsedLines[0].itemId);
+      
       orderLineStore.update(selectedLine.id, {
-        itemId: replaceForm.newItemId,
+        itemId: parsedLines[0].itemId,
       });
 
       auditLogStore.create({
@@ -288,50 +335,62 @@ export function OrderDetailsPage() {
           orderNumber: order.orderNumber,
           oldItem: oldItem?.name,
           newItem: newItem?.name,
-          quantity: newQuantityInTons,
+          quantity: totalNewQuantity,
         },
       });
 
       showToast('success', 'Позиция заменена');
     } else {
-      // Partial replacement - update current line and create new one
-      const remainder = selectedLine.quantityInTons - newQuantityInTons;
+      // Multi-line or partial replacement
+      
+      // If there's a remainder, update the original line with reduced quantity
+      if (remainder > 0.001) {
+        orderLineStore.update(selectedLine.id, {
+          quantity: remainder,
+          quantityInTons: remainder,
+        });
+      } else {
+        // No remainder - delete the original line
+        orderLineStore.delete(selectedLine.id);
+      }
 
-      // Update existing line with reduced quantity
-      orderLineStore.update(selectedLine.id, {
-        quantity: remainder,
-        quantityInTons: remainder,
+      // Create new lines for each replacement
+      parsedLines.forEach(line => {
+        orderLineStore.create({
+          orderId: order.id,
+          itemId: line.itemId,
+          quantity: line.quantityInTonsParsed,
+          unit: 'т',
+          quantityInTons: line.quantityInTonsParsed,
+          containerSize: TONS_IN_CONTAINER_DEFAULT,
+        });
       });
 
-      // Create new line with new item
-      orderLineStore.create({
-        orderId: order.id,
-        itemId: replaceForm.newItemId,
-        quantity: newQuantityInTons,
-        unit: 'т',
-        quantityInTons: newQuantityInTons,
-        containerSize: TONS_IN_CONTAINER_DEFAULT,
-      });
+      const newItemNames = parsedLines.map(line => {
+        const item = itemStore.getById(line.itemId);
+        return `${item?.name} (${formatNumber(line.quantityInTonsParsed)} т)`;
+      }).join(', ');
 
       auditLogStore.create({
-        action: 'REPLACE_PARTIAL',
+        action: 'REPLACE_MULTI',
         entityType: 'OrderLine',
         entityId: selectedLine.id,
         userId: currentUser?.id || '',
         details: {
           orderNumber: order.orderNumber,
           oldItem: oldItem?.name,
-          newItem: newItem?.name,
-          replacedQuantity: newQuantityInTons,
-          remainingQuantity: remainder,
+          oldQuantity: selectedLine.quantityInTons,
+          newItems: newItemNames,
+          totalNewQuantity,
+          remainder,
         },
       });
 
-      showToast('success', 'Позиция частично заменена');
+      showToast('success', parsedLines.length > 1 ? 'Позиция заменена на несколько' : 'Позиция частично заменена');
     }
 
     setOrderLines(orderLineStore.getByOrderId(orderId!));
-    setIsReplaceModalOpen(false);
+    setIsMultiReplaceModalOpen(false);
   };
 
   // Add position handlers
@@ -495,7 +554,7 @@ export function OrderDetailsPage() {
             ✏️
           </button>
           <button
-            onClick={() => handleOpenReplace(row)}
+            onClick={() => handleOpenMultiReplace(row)}
             className="text-green-600 hover:text-green-800 transition-colors text-lg"
             title="Заменить позицию"
           >
@@ -720,7 +779,7 @@ export function OrderDetailsPage() {
                                       ✏️
                                     </button>
                                     <button
-                                      onClick={() => handleOpenReplace(line)}
+                                      onClick={() => handleOpenMultiReplace(line)}
                                       className="text-green-600 hover:text-green-800 transition-colors text-lg"
                                       title="Заменить позицию"
                                     >
@@ -835,66 +894,6 @@ export function OrderDetailsPage() {
           </div>
         </Modal>
 
-        {/* Replace Position Modal */}
-        <Modal
-          isOpen={isReplaceModalOpen}
-          onClose={() => setIsReplaceModalOpen(false)}
-          title="Замена позиции"
-          icon="🔄"
-          size="lg"
-        >
-          <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600 mb-1">Текущая позиция</p>
-              <p className="font-semibold">{selectedLine && itemStore.getById(selectedLine.itemId)?.name}</p>
-              <p className="text-sm text-gray-600 mt-2">
-                Количество: {selectedLine && formatNumber(selectedLine.quantityInTons)} т
-              </p>
-            </div>
-
-            <Select
-              label="Новая позиция *"
-              value={replaceForm.newItemId}
-              onChange={(e) => setReplaceForm({ ...replaceForm, newItemId: e.target.value })}
-              options={[
-                { value: '', label: 'Выберите позицию' },
-                ...itemStore.getAll()
-                  .filter(item => item.id !== selectedLine?.itemId)
-                  .map(item => ({ value: item.id, label: item.name })),
-              ]}
-            />
-
-            <Input
-              label="Количество для замены (тонны) *"
-              type="number"
-              step="0.001"
-              value={replaceForm.quantityInTons}
-              onChange={(e) => setReplaceForm({ ...replaceForm, quantityInTons: e.target.value })}
-              placeholder="0.000"
-            />
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
-                💡 <strong>Подсказка:</strong> Если количество меньше исходного, остаток останется как текущая позиция.
-              </p>
-              {selectedLine && replaceForm.quantityInTons && parseFloat(replaceForm.quantityInTons) < selectedLine.quantityInTons && (
-                <p className="text-sm text-blue-800 mt-2">
-                  Остаток: {formatNumber(selectedLine.quantityInTons - parseFloat(replaceForm.quantityInTons))} т
-                </p>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="secondary" onClick={() => setIsReplaceModalOpen(false)}>
-                Отмена
-              </Button>
-              <Button variant="success" onClick={handleSaveReplace}>
-                🔄 Заменить
-              </Button>
-            </div>
-          </div>
-        </Modal>
-
         {/* Add Position Modal */}
         <Modal
           isOpen={isAddPositionModalOpen}
@@ -928,6 +927,155 @@ export function OrderDetailsPage() {
               </Button>
               <Button onClick={handleSaveAddPosition}>
                 ➕ Добавить
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Multi-Replacement Modal */}
+        <Modal
+          isOpen={isMultiReplaceModalOpen}
+          onClose={() => setIsMultiReplaceModalOpen(false)}
+          title="Гибкая замена позиции"
+          icon="🔄"
+          size="xl"
+        >
+          <div className="space-y-4">
+            {/* Current position info */}
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <p className="text-sm text-gray-600 mb-1">Текущая позиция</p>
+              <p className="font-semibold text-lg">{selectedLine && itemStore.getById(selectedLine.itemId)?.name}</p>
+              <p className="text-sm text-gray-600 mt-2">
+                Исходный тоннаж: <span className="font-semibold">{selectedLine && formatTonsWithContainers(selectedLine.quantityInTons)}</span>
+              </p>
+            </div>
+
+            {/* Progress bar showing distributed tonnage */}
+            {selectedLine && (() => {
+              const totalDistributed = multiReplaceForm.reduce((sum, line) => {
+                const qty = parseFloat(line.quantityInTons);
+                return sum + (isNaN(qty) ? 0 : qty);
+              }, 0);
+              const percentage = (totalDistributed / selectedLine.quantityInTons) * 100;
+              const remainder = selectedLine.quantityInTons - totalDistributed;
+
+              const getProgressColor = () => {
+                if (percentage > 100) return 'bg-red-500';
+                if (percentage >= 100) return 'bg-green-500';
+                if (percentage > 0) return 'bg-blue-500';
+                return 'bg-gray-300';
+              };
+
+              return (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-gray-700">Распределено</span>
+                    <span className={`text-sm font-semibold ${percentage > 100 ? 'text-red-600' : 'text-blue-600'}`}>
+                      {formatTonsWithContainers(totalDistributed)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-5 overflow-hidden mb-2">
+                    <div
+                      className={`h-full ${getProgressColor()} transition-all duration-300 flex items-center justify-center text-xs font-bold text-white`}
+                      style={{ width: `${Math.min(percentage, 100)}%` }}
+                    >
+                      {percentage > 5 && `${formatNumber(percentage)}%`}
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">
+                      Остаток: <span className={`font-semibold ${remainder < -0.001 ? 'text-red-600' : 'text-green-600'}`}>
+                        {formatTonsWithContainers(Math.max(0, remainder))}
+                      </span>
+                    </span>
+                    {remainder < -0.001 && (
+                      <span className="text-red-600 font-semibold">
+                        ⚠️ Превышение на {formatTonsWithContainers(Math.abs(remainder))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Replacement lines */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-gray-700">Новые позиции:</p>
+              
+              {multiReplaceForm.map((line, index) => {
+                const usedItemIds = multiReplaceForm.filter(l => l.id !== line.id).map(l => l.itemId);
+                const containers = line.quantityInTons ? parseFloat(line.quantityInTons) / 28 : 0;
+                
+                return (
+                  <div key={line.id} className="flex gap-2 items-end bg-white p-3 rounded-lg border border-gray-200">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Позиция #{index + 1}
+                      </label>
+                      <Select
+                        value={line.itemId}
+                        onChange={(e) => handleUpdateReplacementLine(line.id, 'itemId', e.target.value)}
+                        options={[
+                          { value: '', label: 'Выберите позицию' },
+                          ...itemStore.getAll()
+                            .filter(item => item.id !== selectedLine?.itemId && !usedItemIds.includes(item.id))
+                            .map(item => ({ value: item.id, label: item.name })),
+                        ]}
+                      />
+                    </div>
+                    
+                    <div className="w-32">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Тонны
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        value={line.quantityInTons}
+                        onChange={(e) => handleUpdateReplacementLine(line.id, 'quantityInTons', e.target.value)}
+                        placeholder="0.000"
+                      />
+                    </div>
+
+                    <div className="w-28">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Контейнеры
+                      </label>
+                      <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-600">
+                        {!isNaN(containers) && containers > 0 ? formatNumber(containers) : '—'}
+                      </div>
+                    </div>
+
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => handleRemoveReplacementLine(line.id)}
+                      disabled={multiReplaceForm.length === 1}
+                      className="mb-[2px]"
+                    >
+                      ❌
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add line button */}
+            <Button
+              variant="secondary"
+              onClick={handleAddReplacementLine}
+              className="w-full"
+            >
+              + Добавить позицию
+            </Button>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="secondary" onClick={() => setIsMultiReplaceModalOpen(false)}>
+                Отмена
+              </Button>
+              <Button variant="success" onClick={handleSaveMultiReplace}>
+                ✅ Заменить
               </Button>
             </div>
           </div>
