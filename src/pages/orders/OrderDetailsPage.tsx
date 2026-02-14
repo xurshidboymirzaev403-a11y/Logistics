@@ -310,7 +310,7 @@ export function OrderDetailsPage() {
         quantity: newQuantityInTons,
         unit: 'т',
         quantityInTons: newQuantityInTons,
-        containerSize: 28,
+        containerSize: TONS_IN_CONTAINER_DEFAULT,
       });
 
       auditLogStore.create({
@@ -367,7 +367,7 @@ export function OrderDetailsPage() {
       quantity: quantityInTons,
       unit: 'т',
       quantityInTons: quantityInTons,
-      containerSize: 28,
+      containerSize: TONS_IN_CONTAINER_DEFAULT,
     });
 
     auditLogStore.create({

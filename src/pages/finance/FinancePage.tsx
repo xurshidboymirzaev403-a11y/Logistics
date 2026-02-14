@@ -82,7 +82,7 @@ export function FinancePage() {
       const remaining = line.quantityInTons - allocated;
       if (remaining > 0.001) {
         undistributedLines.push({
-          itemName: item?.name || 'Unknown',
+          itemName: item?.name || 'Неизвестно',
           ordered: line.quantityInTons,
           allocated,
           remaining,
