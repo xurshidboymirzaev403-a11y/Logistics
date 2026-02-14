@@ -22,6 +22,7 @@ export function CreateOrderPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   // Form state
+  const [orderName, setOrderName] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [tons, setTons] = useState('');
   const [containers, setContainers] = useState('');
@@ -134,6 +135,7 @@ export function CreateOrderPage() {
     // Create order
     const order = orderStore.create({
       orderNumber: orderStore.getNextOrderNumber(),
+      name: orderName.trim() || undefined,
       createdAt: new Date().toISOString(),
       createdBy: currentUser.id,
       status: 'locked',
@@ -184,6 +186,17 @@ export function CreateOrderPage() {
           <Button variant="secondary" onClick={() => navigate('/orders')}>
             ← Назад
           </Button>
+        </div>
+
+        {/* Order Name Input */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6 border-2 border-gray-200">
+          <Input
+            label="Название заказа (необязательно)"
+            type="text"
+            value={orderName}
+            onChange={(e) => setOrderName(e.target.value)}
+            placeholder="Например: Поставка продукции для клиента X"
+          />
         </div>
 
         {/* Add Item Form */}

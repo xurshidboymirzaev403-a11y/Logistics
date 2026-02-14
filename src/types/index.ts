@@ -30,6 +30,7 @@ export type OrderStatus = 'draft' | 'locked' | 'distributed' | 'financial' | 'co
 export interface Order {
   id: string;
   orderNumber: string;
+  name?: string;
   createdAt: string;
   createdBy: string;
   status: OrderStatus;

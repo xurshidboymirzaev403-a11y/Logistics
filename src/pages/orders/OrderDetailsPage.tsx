@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Select } from '../../components/ui/Select';
+import { Modal } from '../../components/ui/Modal';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore, allocationStore, paymentStore, auditLogStore, currentUserStore, adminModeStore, itemStore } from '../../store';
 import { showToast } from '../../components/ui/Toast';
-import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT } from '../../utils/helpers';
+import { getOrderStatusLabel, getOrderStatusColor, formatDateTime, formatNumber, TONS_IN_CONTAINER_DEFAULT, validateDistribution } from '../../utils/helpers';
 import type { Order, OrderLine } from '../../types';
 
 interface GroupedContainer {
@@ -19,7 +22,32 @@ export function OrderDetailsPage() {
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | undefined>();
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
   const isAdminMode = adminModeStore.get();
+
+  // Modal states for editing order lines
+  const [isEditQuantityModalOpen, setIsEditQuantityModalOpen] = useState(false);
+  const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false);
+  const [isAddPositionModalOpen, setIsAddPositionModalOpen] = useState(false);
+  const [selectedLine, setSelectedLine] = useState<OrderLine | null>(null);
+  
+  // Edit quantity form
+  const [editQuantityForm, setEditQuantityForm] = useState({
+    quantityInTons: '',
+  });
+
+  // Replace position form
+  const [replaceForm, setReplaceForm] = useState({
+    newItemId: '',
+    quantityInTons: '',
+  });
+
+  // Add position form
+  const [addPositionForm, setAddPositionForm] = useState({
+    itemId: '',
+    quantityInTons: '',
+  });
 
   useEffect(() => {
     if (orderId) {
@@ -28,9 +56,32 @@ export function OrderDetailsPage() {
       
       if (foundOrder) {
         setOrderLines(orderLineStore.getByOrderId(orderId));
+        setEditedName(foundOrder.name || '');
       }
     }
   }, [orderId]);
+
+  // Calculate distribution status for each line
+  const lineDistributionStatus = useMemo(() => {
+    if (!orderId) return new Map();
+
+    const allocations = allocationStore.getByOrderId(orderId);
+    const statusMap = new Map();
+
+    orderLines.forEach(line => {
+      const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
+      const { allocated } = validateDistribution(line, lineAllocations);
+      const percentage = line.quantityInTons > 0 ? (allocated / line.quantityInTons) * 100 : 0;
+      
+      statusMap.set(line.id, {
+        allocated,
+        percentage,
+        isFullyDistributed: percentage >= 99.9,
+      });
+    });
+
+    return statusMap;
+  }, [orderId, orderLines]);
 
   const handleDelete = () => {
     if (!order) return;
@@ -73,6 +124,267 @@ export function OrderDetailsPage() {
 
     showToast('success', 'Заказ удален');
     navigate('/orders');
+  };
+
+  const handleSaveName = () => {
+    if (!order) return;
+
+    const currentUser = currentUserStore.get();
+    const trimmedName = editedName.trim();
+
+    orderStore.update(order.id, { name: trimmedName || undefined });
+    
+    auditLogStore.create({
+      action: 'UPDATE',
+      entityType: 'Order',
+      entityId: order.id,
+      userId: currentUser?.id || '',
+      details: { 
+        orderNumber: order.orderNumber,
+        field: 'name',
+        oldValue: order.name,
+        newValue: trimmedName || undefined,
+      },
+    });
+
+    setOrder({ ...order, name: trimmedName || undefined });
+    setIsEditingName(false);
+    showToast('success', 'Название обновлено');
+  };
+
+  const handleCancelEditName = () => {
+    setEditedName(order?.name || '');
+    setIsEditingName(false);
+  };
+
+  // Edit quantity handlers
+  const handleOpenEditQuantity = (line: OrderLine) => {
+    setSelectedLine(line);
+    setEditQuantityForm({
+      quantityInTons: formatNumber(line.quantityInTons),
+    });
+    setIsEditQuantityModalOpen(true);
+  };
+
+  const handleSaveEditQuantity = () => {
+    if (!selectedLine || !order) return;
+
+    const newQuantityInTons = parseFloat(editQuantityForm.quantityInTons);
+    if (isNaN(newQuantityInTons) || newQuantityInTons <= 0) {
+      showToast('error', 'Введите корректное количество');
+      return;
+    }
+
+    const currentUser = currentUserStore.get();
+
+    // Update the order line
+    orderLineStore.update(selectedLine.id, {
+      quantity: newQuantityInTons,
+      quantityInTons: newQuantityInTons,
+    });
+
+    auditLogStore.create({
+      action: 'UPDATE',
+      entityType: 'OrderLine',
+      entityId: selectedLine.id,
+      userId: currentUser?.id || '',
+      details: {
+        orderNumber: order.orderNumber,
+        oldQuantity: selectedLine.quantityInTons,
+        newQuantity: newQuantityInTons,
+      },
+    });
+
+    setOrderLines(orderLineStore.getByOrderId(orderId!));
+    setIsEditQuantityModalOpen(false);
+    showToast('success', 'Количество обновлено');
+  };
+
+  // Delete line handlers
+  const handleDeleteLine = (line: OrderLine) => {
+    if (!order) return;
+
+    const currentUser = currentUserStore.get();
+    const item = itemStore.getById(line.itemId);
+
+    if (!confirm(`Удалить позицию "${item?.name}"?`)) {
+      return;
+    }
+
+    // Check if this is the last line
+    if (orderLines.length === 1) {
+      if (confirm('Это последняя позиция. Удалить заказ целиком?')) {
+        handleDelete();
+        return;
+      } else {
+        return;
+      }
+    }
+
+    orderLineStore.delete(line.id);
+
+    auditLogStore.create({
+      action: 'DELETE',
+      entityType: 'OrderLine',
+      entityId: line.id,
+      userId: currentUser?.id || '',
+      details: {
+        orderNumber: order.orderNumber,
+        itemName: item?.name,
+        quantity: line.quantityInTons,
+      },
+    });
+
+    setOrderLines(orderLineStore.getByOrderId(orderId!));
+    showToast('success', 'Позиция удалена');
+  };
+
+  // Replace position handlers
+  const handleOpenReplace = (line: OrderLine) => {
+    setSelectedLine(line);
+    setReplaceForm({
+      newItemId: '',
+      quantityInTons: formatNumber(line.quantityInTons),
+    });
+    setIsReplaceModalOpen(true);
+  };
+
+  const handleSaveReplace = () => {
+    if (!selectedLine || !order) return;
+
+    const currentUser = currentUserStore.get();
+    const newQuantityInTons = parseFloat(replaceForm.quantityInTons);
+
+    if (!replaceForm.newItemId) {
+      showToast('error', 'Выберите новую позицию');
+      return;
+    }
+
+    if (isNaN(newQuantityInTons) || newQuantityInTons <= 0) {
+      showToast('error', 'Введите корректное количество');
+      return;
+    }
+
+    if (newQuantityInTons > selectedLine.quantityInTons) {
+      showToast('error', 'Количество не может превышать исходное');
+      return;
+    }
+
+    const oldItem = itemStore.getById(selectedLine.itemId);
+    const newItem = itemStore.getById(replaceForm.newItemId);
+
+    if (newQuantityInTons === selectedLine.quantityInTons) {
+      // Full replacement - just update the itemId
+      orderLineStore.update(selectedLine.id, {
+        itemId: replaceForm.newItemId,
+      });
+
+      auditLogStore.create({
+        action: 'REPLACE',
+        entityType: 'OrderLine',
+        entityId: selectedLine.id,
+        userId: currentUser?.id || '',
+        details: {
+          orderNumber: order.orderNumber,
+          oldItem: oldItem?.name,
+          newItem: newItem?.name,
+          quantity: newQuantityInTons,
+        },
+      });
+
+      showToast('success', 'Позиция заменена');
+    } else {
+      // Partial replacement - update current line and create new one
+      const remainder = selectedLine.quantityInTons - newQuantityInTons;
+
+      // Update existing line with reduced quantity
+      orderLineStore.update(selectedLine.id, {
+        quantity: remainder,
+        quantityInTons: remainder,
+      });
+
+      // Create new line with new item
+      orderLineStore.create({
+        orderId: order.id,
+        itemId: replaceForm.newItemId,
+        quantity: newQuantityInTons,
+        unit: 'т',
+        quantityInTons: newQuantityInTons,
+        containerSize: TONS_IN_CONTAINER_DEFAULT,
+      });
+
+      auditLogStore.create({
+        action: 'REPLACE_PARTIAL',
+        entityType: 'OrderLine',
+        entityId: selectedLine.id,
+        userId: currentUser?.id || '',
+        details: {
+          orderNumber: order.orderNumber,
+          oldItem: oldItem?.name,
+          newItem: newItem?.name,
+          replacedQuantity: newQuantityInTons,
+          remainingQuantity: remainder,
+        },
+      });
+
+      showToast('success', 'Позиция частично заменена');
+    }
+
+    setOrderLines(orderLineStore.getByOrderId(orderId!));
+    setIsReplaceModalOpen(false);
+  };
+
+  // Add position handlers
+  const handleOpenAddPosition = () => {
+    setAddPositionForm({
+      itemId: '',
+      quantityInTons: '',
+    });
+    setIsAddPositionModalOpen(true);
+  };
+
+  const handleSaveAddPosition = () => {
+    if (!order) return;
+
+    const currentUser = currentUserStore.get();
+    const quantityInTons = parseFloat(addPositionForm.quantityInTons);
+
+    if (!addPositionForm.itemId) {
+      showToast('error', 'Выберите позицию');
+      return;
+    }
+
+    if (isNaN(quantityInTons) || quantityInTons <= 0) {
+      showToast('error', 'Введите корректное количество');
+      return;
+    }
+
+    const item = itemStore.getById(addPositionForm.itemId);
+
+    orderLineStore.create({
+      orderId: order.id,
+      itemId: addPositionForm.itemId,
+      quantity: quantityInTons,
+      unit: 'т',
+      quantityInTons: quantityInTons,
+      containerSize: TONS_IN_CONTAINER_DEFAULT,
+    });
+
+    auditLogStore.create({
+      action: 'ADD',
+      entityType: 'OrderLine',
+      entityId: order.id,
+      userId: currentUser?.id || '',
+      details: {
+        orderNumber: order.orderNumber,
+        itemName: item?.name,
+        quantity: quantityInTons,
+      },
+    });
+
+    setOrderLines(orderLineStore.getByOrderId(orderId!));
+    setIsAddPositionModalOpen(false);
+    showToast('success', 'Позиция добавлена');
   };
 
   // Group order lines by container
@@ -129,11 +441,76 @@ export function OrderDetailsPage() {
       render: (value: number) => `${formatNumber(value)} т`,
     },
     {
+      key: 'distribution',
+      label: 'Распределение',
+      render: (_: any, row: OrderLine) => {
+        const status = lineDistributionStatus.get(row.id);
+        if (!status) return '-';
+
+        const getProgressColor = () => {
+          if (status.percentage >= 99.9) return 'bg-green-500';
+          if (status.percentage > 0) return 'bg-yellow-500';
+          return 'bg-red-500';
+        };
+
+        const getTextColor = () => {
+          if (status.percentage >= 99.9) return 'text-green-600';
+          if (status.percentage > 0) return 'text-yellow-600';
+          return 'text-red-600';
+        };
+
+        return (
+          <div className="space-y-1">
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+              <div
+                className={`h-full ${getProgressColor()} transition-all duration-500 flex items-center justify-center text-xs font-bold text-white`}
+                style={{ width: `${Math.min(status.percentage, 100)}%` }}
+              >
+                {status.percentage > 10 && `${status.percentage.toFixed(0)}%`}
+              </div>
+            </div>
+            <div className={`text-xs ${getTextColor()} font-semibold`}>
+              {formatNumber(status.allocated)} т из {formatNumber(row.quantityInTons)} т
+            </div>
+          </div>
+        );
+      },
+    },
+    {
       key: 'containerSize',
       label: 'Размер конт.',
       render: (value: number | undefined, row: OrderLine) => 
         row.unit === 'конт.' && value ? `${value}т` : '-',
     },
+    ...(order?.status === 'locked' ? [{
+      key: 'actions',
+      label: 'Действия',
+      render: (_: any, row: OrderLine) => (
+        <div className="flex justify-center gap-2">
+          <button
+            onClick={() => handleOpenEditQuantity(row)}
+            className="text-blue-600 hover:text-blue-800 transition-colors text-lg"
+            title="Редактировать количество"
+          >
+            ✏️
+          </button>
+          <button
+            onClick={() => handleOpenReplace(row)}
+            className="text-green-600 hover:text-green-800 transition-colors text-lg"
+            title="Заменить позицию"
+          >
+            🔄
+          </button>
+          <button
+            onClick={() => handleDeleteLine(row)}
+            className="text-red-600 hover:text-red-800 transition-colors text-lg"
+            title="Удалить позицию"
+          >
+            🗑️
+          </button>
+        </div>
+      ),
+    }] : []),
   ];
 
   const totalTons = orderLines.reduce((sum, line) => sum + line.quantityInTons, 0);
@@ -168,20 +545,59 @@ export function OrderDetailsPage() {
 
         {/* Order Info */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Номер заказа</p>
-              <p className="text-lg font-semibold">{order.orderNumber}</p>
+          <div className="grid grid-cols-1 gap-4">
+            {/* Order Name/Number Section */}
+            <div className="border-b pb-4">
+              <p className="text-sm text-gray-600 mb-2">Название заказа</p>
+              {isEditingName ? (
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Input
+                      type="text"
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      placeholder={order.orderNumber}
+                      autoFocus
+                    />
+                  </div>
+                  <Button size="sm" onClick={handleSaveName}>
+                    ✅ Сохранить
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={handleCancelEditName}>
+                    ✖️ Отмена
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <p className="text-lg font-semibold">
+                    {order.name || order.orderNumber}
+                  </p>
+                  <button
+                    onClick={() => setIsEditingName(true)}
+                    className="text-blue-600 hover:text-blue-800 transition-colors text-lg"
+                    title="Редактировать название"
+                  >
+                    ✏️
+                  </button>
+                </div>
+              )}
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Дата создания</p>
-              <p className="text-lg font-semibold">{formatDateTime(order.createdAt)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Статус</p>
-              <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getOrderStatusColor(order.status)}`}>
-                {getOrderStatusLabel(order.status)}
-              </span>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-sm text-gray-600">Номер заказа</p>
+                <p className="text-lg font-semibold">{order.orderNumber}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Дата создания</p>
+                <p className="text-lg font-semibold">{formatDateTime(order.createdAt)}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Статус</p>
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getOrderStatusColor(order.status)}`}>
+                  {getOrderStatusLabel(order.status)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -244,10 +660,29 @@ export function OrderDetailsPage() {
                             <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Количество</th>
                             <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Единица</th>
                             <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">В тоннах</th>
+                            <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Распределение</th>
+                            {order.status === 'locked' && (
+                              <th className="px-4 py-2 text-center text-sm font-semibold text-gray-700">Действия</th>
+                            )}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
-                          {container.lines.map((line) => (
+                          {container.lines.map((line) => {
+                            const distStatus = lineDistributionStatus.get(line.id);
+                            const getDistProgressColor = () => {
+                              if (!distStatus) return 'bg-gray-300';
+                              if (distStatus.percentage >= 99.9) return 'bg-green-500';
+                              if (distStatus.percentage > 0) return 'bg-yellow-500';
+                              return 'bg-red-500';
+                            };
+                            const getDistTextColor = () => {
+                              if (!distStatus) return 'text-gray-600';
+                              if (distStatus.percentage >= 99.9) return 'text-green-600';
+                              if (distStatus.percentage > 0) return 'text-yellow-600';
+                              return 'text-red-600';
+                            };
+
+                            return (
                             <tr key={line.id} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-2 text-sm text-gray-900">
                                 {itemStore.getById(line.itemId)?.name || '-'}
@@ -259,8 +694,51 @@ export function OrderDetailsPage() {
                               <td className="px-4 py-2 text-sm font-semibold text-gray-900">
                                 {formatNumber(line.quantityInTons)} т
                               </td>
+                              <td className="px-4 py-2">
+                                {distStatus ? (
+                                  <div className="space-y-1">
+                                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                      <div
+                                        className={`h-full ${getDistProgressColor()} transition-all duration-500`}
+                                        style={{ width: `${Math.min(distStatus.percentage, 100)}%` }}
+                                      />
+                                    </div>
+                                    <div className={`text-xs ${getDistTextColor()} font-semibold`}>
+                                      {formatNumber(distStatus.allocated)} т / {formatNumber(line.quantityInTons)} т
+                                    </div>
+                                  </div>
+                                ) : '-'}
+                              </td>
+                              {order.status === 'locked' && (
+                                <td className="px-4 py-2 text-center">
+                                  <div className="flex justify-center gap-2">
+                                    <button
+                                      onClick={() => handleOpenEditQuantity(line)}
+                                      className="text-blue-600 hover:text-blue-800 transition-colors text-lg"
+                                      title="Редактировать количество"
+                                    >
+                                      ✏️
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenReplace(line)}
+                                      className="text-green-600 hover:text-green-800 transition-colors text-lg"
+                                      title="Заменить позицию"
+                                    >
+                                      🔄
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteLine(line)}
+                                      className="text-red-600 hover:text-red-800 transition-colors text-lg"
+                                      title="Удалить позицию"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -310,6 +788,150 @@ export function OrderDetailsPage() {
             </div>
           </div>
         )}
+
+        {/* Add Position Button */}
+        {order.status === 'locked' && (
+          <div className="mt-6 flex justify-center">
+            <Button onClick={handleOpenAddPosition}>
+              ➕ Добавить позицию
+            </Button>
+          </div>
+        )}
+
+        {/* Edit Quantity Modal */}
+        <Modal
+          isOpen={isEditQuantityModalOpen}
+          onClose={() => setIsEditQuantityModalOpen(false)}
+          title="Редактирование количества"
+          icon="✏️"
+        >
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600 mb-1">Текущая позиция</p>
+              <p className="font-semibold">{selectedLine && itemStore.getById(selectedLine.itemId)?.name}</p>
+              <p className="text-sm text-gray-600 mt-2">
+                Текущее количество: {selectedLine && formatNumber(selectedLine.quantityInTons)} т
+              </p>
+            </div>
+
+            <Input
+              label="Новое количество (тонны) *"
+              type="number"
+              step="0.001"
+              value={editQuantityForm.quantityInTons}
+              onChange={(e) => setEditQuantityForm({ quantityInTons: e.target.value })}
+              placeholder="0.000"
+              autoFocus
+            />
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="secondary" onClick={() => setIsEditQuantityModalOpen(false)}>
+                Отмена
+              </Button>
+              <Button onClick={handleSaveEditQuantity}>
+                ✅ Сохранить
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Replace Position Modal */}
+        <Modal
+          isOpen={isReplaceModalOpen}
+          onClose={() => setIsReplaceModalOpen(false)}
+          title="Замена позиции"
+          icon="🔄"
+          size="lg"
+        >
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-600 mb-1">Текущая позиция</p>
+              <p className="font-semibold">{selectedLine && itemStore.getById(selectedLine.itemId)?.name}</p>
+              <p className="text-sm text-gray-600 mt-2">
+                Количество: {selectedLine && formatNumber(selectedLine.quantityInTons)} т
+              </p>
+            </div>
+
+            <Select
+              label="Новая позиция *"
+              value={replaceForm.newItemId}
+              onChange={(e) => setReplaceForm({ ...replaceForm, newItemId: e.target.value })}
+              options={[
+                { value: '', label: 'Выберите позицию' },
+                ...itemStore.getAll()
+                  .filter(item => item.id !== selectedLine?.itemId)
+                  .map(item => ({ value: item.id, label: item.name })),
+              ]}
+            />
+
+            <Input
+              label="Количество для замены (тонны) *"
+              type="number"
+              step="0.001"
+              value={replaceForm.quantityInTons}
+              onChange={(e) => setReplaceForm({ ...replaceForm, quantityInTons: e.target.value })}
+              placeholder="0.000"
+            />
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                💡 <strong>Подсказка:</strong> Если количество меньше исходного, остаток останется как текущая позиция.
+              </p>
+              {selectedLine && replaceForm.quantityInTons && parseFloat(replaceForm.quantityInTons) < selectedLine.quantityInTons && (
+                <p className="text-sm text-blue-800 mt-2">
+                  Остаток: {formatNumber(selectedLine.quantityInTons - parseFloat(replaceForm.quantityInTons))} т
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="secondary" onClick={() => setIsReplaceModalOpen(false)}>
+                Отмена
+              </Button>
+              <Button variant="success" onClick={handleSaveReplace}>
+                🔄 Заменить
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Add Position Modal */}
+        <Modal
+          isOpen={isAddPositionModalOpen}
+          onClose={() => setIsAddPositionModalOpen(false)}
+          title="Добавление позиции"
+          icon="➕"
+        >
+          <div className="space-y-4">
+            <Select
+              label="Позиция *"
+              value={addPositionForm.itemId}
+              onChange={(e) => setAddPositionForm({ ...addPositionForm, itemId: e.target.value })}
+              options={[
+                { value: '', label: 'Выберите позицию' },
+                ...itemStore.getAll().map(item => ({ value: item.id, label: item.name })),
+              ]}
+            />
+
+            <Input
+              label="Количество (тонны) *"
+              type="number"
+              step="0.001"
+              value={addPositionForm.quantityInTons}
+              onChange={(e) => setAddPositionForm({ ...addPositionForm, quantityInTons: e.target.value })}
+              placeholder="0.000"
+            />
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="secondary" onClick={() => setIsAddPositionModalOpen(false)}>
+                Отмена
+              </Button>
+              <Button onClick={handleSaveAddPosition}>
+                ➕ Добавить
+              </Button>
+            </div>
+          </div>
+        </Modal>
       </div>
     </Layout>
   );

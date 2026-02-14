@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
@@ -7,13 +7,15 @@ import { Input } from '../../components/ui/Input';
 import { showToast } from '../../components/ui/Toast';
 import {
   orderStore,
+  orderLineStore,
   allocationStore,
   supplierStore,
   paymentStore,
   currentUserStore,
   auditLogStore,
+  itemStore,
 } from '../../store';
-import { getTodayDate, formatDateTime, getPaymentTypeLabel } from '../../utils/helpers';
+import { getTodayDate, formatDateTime, getPaymentTypeLabel, validateDistribution, formatNumber } from '../../utils/helpers';
 import { formatCurrency } from '../../utils/format';
 import type { Order, Allocation, PaymentOperation, Currency } from '../../types';
 
@@ -56,6 +58,49 @@ export function FinancePage() {
         setPayments(paymentStore.getByOrderId(orderId));
       }
     }
+  }, [orderId]);
+
+  // Calculate undistributed items
+  const undistributedInfo = useMemo(() => {
+    if (!orderId) return null;
+
+    const orderLines = orderLineStore.getByOrderId(orderId);
+    const allocations = allocationStore.getByOrderId(orderId);
+
+    let totalOrdered = 0;
+    let totalAllocated = 0;
+    const undistributedLines: Array<{ itemName: string; ordered: number; allocated: number; remaining: number }> = [];
+
+    orderLines.forEach(line => {
+      const item = itemStore.getById(line.itemId);
+      totalOrdered += line.quantityInTons;
+      
+      const lineAllocations = allocations.filter(a => a.orderLineId === line.id);
+      const { allocated } = validateDistribution(line, lineAllocations);
+      totalAllocated += allocated;
+
+      const remaining = line.quantityInTons - allocated;
+      if (remaining > 0.001) {
+        undistributedLines.push({
+          itemName: item?.name || 'Неизвестно',
+          ordered: line.quantityInTons,
+          allocated,
+          remaining,
+        });
+      }
+    });
+
+    const totalRemaining = totalOrdered - totalAllocated;
+    const percentage = totalOrdered > 0 ? ((totalOrdered - totalRemaining) / totalOrdered) * 100 : 0;
+
+    return {
+      totalOrdered,
+      totalAllocated,
+      totalRemaining,
+      percentage,
+      hasUndistributed: totalRemaining > 0.001,
+      undistributedLines,
+    };
   }, [orderId]);
 
   const handleOpenPaymentModal = (supplierId: string, type: 'PREPAYMENT' | 'PAYOFF', currency: Currency, defaultAmount?: number) => {
@@ -226,6 +271,39 @@ export function FinancePage() {
             ← Назад
           </Button>
         </div>
+
+        {/* Undistributed Items Warning */}
+        {undistributedInfo?.hasUndistributed && (
+          <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6 mb-6">
+            <div className="flex items-start gap-3 mb-4">
+              <span className="text-3xl">⚠️</span>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-yellow-900 mb-2">
+                  Не распределено: {formatNumber(undistributedInfo.totalRemaining)} т из {formatNumber(undistributedInfo.totalOrdered)} т ({formatNumber(100 - undistributedInfo.percentage)}%)
+                </h3>
+                <p className="text-sm text-yellow-800 mb-3">
+                  Распределено только {formatNumber(undistributedInfo.percentage)}% от заказа
+                </p>
+
+                {undistributedInfo.undistributedLines.length > 0 && (
+                  <div className="bg-white rounded-lg p-4 border border-yellow-200">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">Нераспределённые позиции:</p>
+                    <div className="space-y-2">
+                      {undistributedInfo.undistributedLines.map((line, index) => (
+                        <div key={index} className="flex justify-between text-sm">
+                          <span className="text-gray-900">{line.itemName}</span>
+                          <span className="text-red-600 font-semibold">
+                            Остаток: {formatNumber(line.remaining)} т (из {formatNumber(line.ordered)} т)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Suppliers */}
         {Object.values(supplierGroups).map((group) => {
