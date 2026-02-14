@@ -1,39 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { Table } from '../components/ui/Table';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
-import { showToast } from '../components/ui/Toast';
 import { auditLogStore, userStore } from '../store';
 import { formatDateTime } from '../utils/helpers';
 
 export function AuditPage() {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [logs] = useState(auditLogStore.getAll());
   const [filterAction, setFilterAction] = useState('');
   const [filterEntityType, setFilterEntityType] = useState('');
   const [filterUserId, setFilterUserId] = useState('');
   const [filterDate, setFilterDate] = useState('');
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [auditLogs, allUsers] = await Promise.all([
-          auditLogStore.getAll(),
-          userStore.getAll()
-        ]);
-        setLogs(auditLogs);
-        setUsers(allUsers);
-      } catch (error) {
-        showToast('error', 'Ошибка загрузки данных');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
+  const users = userStore.getAll();
 
   const filteredLogs = logs.filter((log) => {
     if (filterAction && log.action !== filterAction) return false;
@@ -54,7 +34,7 @@ export function AuditPage() {
       key: 'userId',
       label: 'Пользователь',
       render: (value: string) => {
-        const user = users.find(u => u.id === value);
+        const user = userStore.getById(value);
         return user?.fullName || 'Неизвестен';
       },
     },
@@ -115,57 +95,48 @@ export function AuditPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Аудит</h1>
 
-        {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <span className="ml-3 text-gray-600">Загрузка...</span>
-          </div>
-        ) : (
-          <>
-            {/* Filters */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">Фильтры</h2>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Input
-                  label="Дата"
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                />
-                <Select
-                  label="Пользователь"
-                  value={filterUserId}
-                  onChange={(e) => setFilterUserId(e.target.value)}
-                  options={userOptions}
-                />
-                <Select
-                  label="Действие"
-                  value={filterAction}
-                  onChange={(e) => setFilterAction(e.target.value)}
-                  options={actionOptions}
-                />
-                <Select
-                  label="Тип сущности"
-                  value={filterEntityType}
-                  onChange={(e) => setFilterEntityType(e.target.value)}
-                  options={entityTypeOptions}
-                />
-              </div>
-            </div>
-
-            {/* Logs Table */}
-            <div className="mb-4">
-              <p className="text-sm text-gray-600">
-                Показано записей: {filteredLogs.length} из {logs.length}
-              </p>
-            </div>
-            <Table
-              columns={columns}
-              data={filteredLogs}
-              emptyMessage="Нет записей в журнале аудита"
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-4">Фильтры</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Input
+              label="Дата"
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
             />
-          </>
-        )}
+            <Select
+              label="Пользователь"
+              value={filterUserId}
+              onChange={(e) => setFilterUserId(e.target.value)}
+              options={userOptions}
+            />
+            <Select
+              label="Действие"
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.target.value)}
+              options={actionOptions}
+            />
+            <Select
+              label="Тип сущности"
+              value={filterEntityType}
+              onChange={(e) => setFilterEntityType(e.target.value)}
+              options={entityTypeOptions}
+            />
+          </div>
+        </div>
+
+        {/* Logs Table */}
+        <div className="mb-4">
+          <p className="text-sm text-gray-600">
+            Показано записей: {filteredLogs.length} из {logs.length}
+          </p>
+        </div>
+        <Table
+          columns={columns}
+          data={filteredLogs}
+          emptyMessage="Нет записей в журнале аудита"
+        />
       </div>
     </Layout>
   );

@@ -1,45 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Table } from '../../components/ui/Table';
 import { orderStore, orderLineStore } from '../../store';
-import { showToast } from '../../components/ui/Toast';
 import { getOrderStatusLabel, getOrderStatusColor, formatDateTime } from '../../utils/helpers';
 
 export function DistributionListPage() {
   const navigate = useNavigate();
-  const [orders, setOrders] = useState<any[]>([]);
-  const [orderLineCounts, setOrderLineCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const allOrders = await orderStore.getAll();
-        const filteredOrders = allOrders.filter((o) => ['locked', 'distributed', 'financial', 'completed'].includes(o.status));
-        setOrders(filteredOrders);
-        
-        // Load line counts for each order in parallel
-        const countPromises = filteredOrders.map(async (order) => {
-          const lines = await orderLineStore.getByOrderId(order.id);
-          return { orderId: order.id, count: lines.length };
-        });
-        const countResults = await Promise.all(countPromises);
-        const counts: Record<string, number> = {};
-        countResults.forEach(({ orderId, count }) => {
-          counts[orderId] = count;
-        });
-        setOrderLineCounts(counts);
-      } catch (error) {
-        showToast('error', 'Ошибка загрузки данных');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
+  const [orders] = useState(
+    orderStore.getAll().filter((o) => ['locked', 'distributed', 'financial', 'completed'].includes(o.status))
+  );
 
   const columns = [
     {
@@ -71,7 +42,7 @@ export function DistributionListPage() {
     {
       key: 'id',
       label: 'Позиций',
-      render: (value: string) => orderLineCounts[value] || 0,
+      render: (value: string) => orderLineStore.getByOrderId(value).length,
     },
     {
       key: 'actions',
@@ -93,18 +64,11 @@ export function DistributionListPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Распределение</h1>
 
-        {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <span className="ml-3 text-gray-600">Загрузка...</span>
-          </div>
-        ) : (
-          <Table
-            columns={columns}
-            data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
-            emptyMessage="Нет заказов для распределения"
-          />
-        )}
+        <Table
+          columns={columns}
+          data={orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())}
+          emptyMessage="Нет заказов для распределения"
+        />
       </div>
     </Layout>
   );

@@ -12,24 +12,21 @@ export function Login() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const init = async () => {
-      await initializeDefaultUser();
-      
-      // Check if already logged in
-      const currentUser = currentUserStore.get();
-      if (currentUser) {
-        navigate('/dashboard');
-      }
-    };
-    init();
+    initializeDefaultUser();
+    
+    // Check if already logged in
+    const currentUser = currentUserStore.get();
+    if (currentUser) {
+      navigate('/dashboard');
+    }
   }, [navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    try {
-      const user = await userStore.getByUsername(username);
+    setTimeout(() => {
+      const user = userStore.getByUsername(username);
       
       if (!user || user.password !== password) {
         showToast('error', 'Неверный логин или пароль');
@@ -40,11 +37,7 @@ export function Login() {
       currentUserStore.set(user);
       showToast('success', `Добро пожаловать, ${user.fullName}!`);
       navigate('/dashboard');
-    } catch (error) {
-      console.error('Login error:', error);
-      showToast('error', 'Ошибка при входе');
-      setIsLoading(false);
-    }
+    }, 500);
   };
 
   return (

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   User,
   Item,
@@ -10,8 +10,16 @@ import type {
   AuditLog,
 } from '../types';
 
-// LocalStorage keys (only for currentUser and adminMode)
+// LocalStorage keys
 const KEYS = {
+  USERS: 'logistics_users',
+  ITEMS: 'logistics_items',
+  SUPPLIERS: 'logistics_suppliers',
+  ORDERS: 'logistics_orders',
+  ORDER_LINES: 'logistics_order_lines',
+  ALLOCATIONS: 'logistics_allocations',
+  PAYMENTS: 'logistics_payments',
+  AUDIT_LOGS: 'logistics_audit_logs',
   CURRENT_USER: 'logistics_current_user',
   ADMIN_MODE: 'logistics_admin_mode',
 };
@@ -36,178 +44,147 @@ function setToStorage<T>(key: string, value: T): void {
   }
 }
 
-// Helper functions for converting between camelCase and snake_case
-function toSnakeCase(obj: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = {};
-  for (const key in obj) {
-    const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-    result[snakeKey] = obj[key];
-  }
-  return result;
-}
-
-function toCamelCase(obj: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = {};
-  for (const key in obj) {
-    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-    result[camelKey] = obj[key];
-  }
-  return result;
-}
-
 // Initialize default user
-export async function initializeDefaultUser(): Promise<void> {
-  const { data } = await supabase.from('users').select('*');
-  if (!data || data.length === 0) {
-    await supabase.from('users').insert({
+export function initializeDefaultUser(): void {
+  const users = getFromStorage<User[]>(KEYS.USERS, []);
+  if (users.length === 0) {
+    const defaultUser: User = {
+      id: uuidv4(),
       username: 'admin',
       password: 'admin',
       role: 'admin',
-      full_name: 'Администратор',
-    });
+      fullName: 'Администратор',
+    };
+    setToStorage(KEYS.USERS, [defaultUser]);
   }
 }
 
 // Users
 export const userStore = {
-  getAll: async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('users').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as User);
+  getAll: (): User[] => getFromStorage<User[]>(KEYS.USERS, []),
+  getById: (id: string): User | undefined => {
+    const users = getFromStorage<User[]>(KEYS.USERS, []);
+    return users.find((u) => u.id === id);
   },
-  getById: async (id: string): Promise<User | undefined> => {
-    const { data, error } = await supabase.from('users').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as User;
+  getByUsername: (username: string): User | undefined => {
+    const users = getFromStorage<User[]>(KEYS.USERS, []);
+    return users.find((u) => u.username === username);
   },
-  getByUsername: async (username: string): Promise<User | undefined> => {
-    const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
-    if (error) return undefined;
-    return toCamelCase(data) as User;
+  create: (user: Omit<User, 'id'>): User => {
+    const users = getFromStorage<User[]>(KEYS.USERS, []);
+    const newUser: User = { ...user, id: uuidv4() };
+    setToStorage(KEYS.USERS, [...users, newUser]);
+    return newUser;
   },
-  create: async (user: Omit<User, 'id'>): Promise<User> => {
-    const snakeUser = toSnakeCase(user);
-    const { data, error } = await supabase.from('users').insert(snakeUser).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as User;
+  update: (id: string, updates: Partial<User>): User | undefined => {
+    const users = getFromStorage<User[]>(KEYS.USERS, []);
+    const index = users.findIndex((u) => u.id === id);
+    if (index === -1) return undefined;
+    users[index] = { ...users[index], ...updates };
+    setToStorage(KEYS.USERS, users);
+    return users[index];
   },
-  update: async (id: string, updates: Partial<User>): Promise<User | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('users').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as User;
-  },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('users').delete().eq('id', id);
-    return !error;
+  delete: (id: string): boolean => {
+    const users = getFromStorage<User[]>(KEYS.USERS, []);
+    const filtered = users.filter((u) => u.id !== id);
+    if (filtered.length === users.length) return false;
+    setToStorage(KEYS.USERS, filtered);
+    return true;
   },
 };
 
 // Items
 export const itemStore = {
-  getAll: async (): Promise<Item[]> => {
-    const { data, error } = await supabase.from('items').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as Item);
+  getAll: (): Item[] => getFromStorage<Item[]>(KEYS.ITEMS, []),
+  getById: (id: string): Item | undefined => {
+    const items = getFromStorage<Item[]>(KEYS.ITEMS, []);
+    return items.find((i) => i.id === id);
   },
-  getById: async (id: string): Promise<Item | undefined> => {
-    const { data, error } = await supabase.from('items').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as Item;
+  create: (item: Omit<Item, 'id'>): Item => {
+    const items = getFromStorage<Item[]>(KEYS.ITEMS, []);
+    const newItem: Item = { ...item, id: uuidv4() };
+    setToStorage(KEYS.ITEMS, [...items, newItem]);
+    return newItem;
   },
-  create: async (item: Omit<Item, 'id'>): Promise<Item> => {
-    const snakeItem = toSnakeCase(item);
-    const { data, error } = await supabase.from('items').insert(snakeItem).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as Item;
+  update: (id: string, updates: Partial<Item>): Item | undefined => {
+    const items = getFromStorage<Item[]>(KEYS.ITEMS, []);
+    const index = items.findIndex((i) => i.id === id);
+    if (index === -1) return undefined;
+    items[index] = { ...items[index], ...updates };
+    setToStorage(KEYS.ITEMS, items);
+    return items[index];
   },
-  update: async (id: string, updates: Partial<Item>): Promise<Item | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('items').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as Item;
-  },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('items').delete().eq('id', id);
-    return !error;
+  delete: (id: string): boolean => {
+    const items = getFromStorage<Item[]>(KEYS.ITEMS, []);
+    const filtered = items.filter((i) => i.id !== id);
+    if (filtered.length === items.length) return false;
+    setToStorage(KEYS.ITEMS, filtered);
+    return true;
   },
 };
 
 // Suppliers
 export const supplierStore = {
-  getAll: async (): Promise<Supplier[]> => {
-    const { data, error } = await supabase.from('suppliers').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as Supplier);
+  getAll: (): Supplier[] => getFromStorage<Supplier[]>(KEYS.SUPPLIERS, []),
+  getById: (id: string): Supplier | undefined => {
+    const suppliers = getFromStorage<Supplier[]>(KEYS.SUPPLIERS, []);
+    return suppliers.find((s) => s.id === id);
   },
-  getById: async (id: string): Promise<Supplier | undefined> => {
-    const { data, error } = await supabase.from('suppliers').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as Supplier;
+  create: (supplier: Omit<Supplier, 'id'>): Supplier => {
+    const suppliers = getFromStorage<Supplier[]>(KEYS.SUPPLIERS, []);
+    const newSupplier: Supplier = { ...supplier, id: uuidv4() };
+    setToStorage(KEYS.SUPPLIERS, [...suppliers, newSupplier]);
+    return newSupplier;
   },
-  create: async (supplier: Omit<Supplier, 'id'>): Promise<Supplier> => {
-    const snakeSupplier = toSnakeCase(supplier);
-    const { data, error } = await supabase.from('suppliers').insert(snakeSupplier).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as Supplier;
+  update: (id: string, updates: Partial<Supplier>): Supplier | undefined => {
+    const suppliers = getFromStorage<Supplier[]>(KEYS.SUPPLIERS, []);
+    const index = suppliers.findIndex((s) => s.id === id);
+    if (index === -1) return undefined;
+    suppliers[index] = { ...suppliers[index], ...updates };
+    setToStorage(KEYS.SUPPLIERS, suppliers);
+    return suppliers[index];
   },
-  update: async (id: string, updates: Partial<Supplier>): Promise<Supplier | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('suppliers').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as Supplier;
-  },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('suppliers').delete().eq('id', id);
-    return !error;
+  delete: (id: string): boolean => {
+    const suppliers = getFromStorage<Supplier[]>(KEYS.SUPPLIERS, []);
+    const filtered = suppliers.filter((s) => s.id !== id);
+    if (filtered.length === suppliers.length) return false;
+    setToStorage(KEYS.SUPPLIERS, filtered);
+    return true;
   },
 };
 
 // Orders
 export const orderStore = {
-  getAll: async (): Promise<Order[]> => {
-    const { data, error } = await supabase.from('orders').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as Order);
+  getAll: (): Order[] => getFromStorage<Order[]>(KEYS.ORDERS, []),
+  getById: (id: string): Order | undefined => {
+    const orders = getFromStorage<Order[]>(KEYS.ORDERS, []);
+    return orders.find((o) => o.id === id);
   },
-  getById: async (id: string): Promise<Order | undefined> => {
-    const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as Order;
+  create: (order: Omit<Order, 'id'>): Order => {
+    const orders = getFromStorage<Order[]>(KEYS.ORDERS, []);
+    const newOrder: Order = { ...order, id: uuidv4() };
+    setToStorage(KEYS.ORDERS, [...orders, newOrder]);
+    return newOrder;
   },
-  create: async (order: Omit<Order, 'id'>): Promise<Order> => {
-    const snakeOrder = toSnakeCase(order);
-    const { data, error } = await supabase.from('orders').insert(snakeOrder).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as Order;
+  update: (id: string, updates: Partial<Order>): Order | undefined => {
+    const orders = getFromStorage<Order[]>(KEYS.ORDERS, []);
+    const index = orders.findIndex((o) => o.id === id);
+    if (index === -1) return undefined;
+    orders[index] = { ...orders[index], ...updates };
+    setToStorage(KEYS.ORDERS, orders);
+    return orders[index];
   },
-  update: async (id: string, updates: Partial<Order>): Promise<Order | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('orders').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as Order;
+  delete: (id: string): boolean => {
+    const orders = getFromStorage<Order[]>(KEYS.ORDERS, []);
+    const filtered = orders.filter((o) => o.id !== id);
+    if (filtered.length === orders.length) return false;
+    setToStorage(KEYS.ORDERS, filtered);
+    return true;
   },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('orders').delete().eq('id', id);
-    return !error;
-  },
-  getNextOrderNumber: async (): Promise<string> => {
-    const { data } = await supabase.from('orders').select('order_number');
-    const orders = data || [];
-    const maxNumber = orders.reduce((max: number, order: any) => {
-      const match = order.order_number?.match(/ORD-(\d+)/);
+  getNextOrderNumber: (): string => {
+    const orders = getFromStorage<Order[]>(KEYS.ORDERS, []);
+    const maxNumber = orders.reduce((max, order) => {
+      const match = order.orderNumber.match(/ORD-(\d+)/);
       if (match) {
         const num = parseInt(match[1], 10);
         return num > max ? num : max;
@@ -220,167 +197,134 @@ export const orderStore = {
 
 // OrderLines
 export const orderLineStore = {
-  getAll: async (): Promise<OrderLine[]> => {
-    const { data, error } = await supabase.from('order_lines').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as OrderLine);
+  getAll: (): OrderLine[] => getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []),
+  getById: (id: string): OrderLine | undefined => {
+    const lines = getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []);
+    return lines.find((l) => l.id === id);
   },
-  getById: async (id: string): Promise<OrderLine | undefined> => {
-    const { data, error } = await supabase.from('order_lines').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as OrderLine;
+  getByOrderId: (orderId: string): OrderLine[] => {
+    const lines = getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []);
+    return lines.filter((l) => l.orderId === orderId);
   },
-  getByOrderId: async (orderId: string): Promise<OrderLine[]> => {
-    const { data, error } = await supabase.from('order_lines').select('*').eq('order_id', orderId);
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as OrderLine);
+  create: (line: Omit<OrderLine, 'id'>): OrderLine => {
+    const lines = getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []);
+    const newLine: OrderLine = { ...line, id: uuidv4() };
+    setToStorage(KEYS.ORDER_LINES, [...lines, newLine]);
+    return newLine;
   },
-  create: async (line: Omit<OrderLine, 'id'>): Promise<OrderLine> => {
-    const snakeLine = toSnakeCase(line);
-    const { data, error } = await supabase.from('order_lines').insert(snakeLine).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as OrderLine;
+  update: (id: string, updates: Partial<OrderLine>): OrderLine | undefined => {
+    const lines = getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []);
+    const index = lines.findIndex((l) => l.id === id);
+    if (index === -1) return undefined;
+    lines[index] = { ...lines[index], ...updates };
+    setToStorage(KEYS.ORDER_LINES, lines);
+    return lines[index];
   },
-  update: async (id: string, updates: Partial<OrderLine>): Promise<OrderLine | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('order_lines').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as OrderLine;
+  delete: (id: string): boolean => {
+    const lines = getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []);
+    const filtered = lines.filter((l) => l.id !== id);
+    if (filtered.length === lines.length) return false;
+    setToStorage(KEYS.ORDER_LINES, filtered);
+    return true;
   },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('order_lines').delete().eq('id', id);
-    return !error;
-  },
-  deleteByOrderId: async (orderId: string): Promise<void> => {
-    await supabase.from('order_lines').delete().eq('order_id', orderId);
+  deleteByOrderId: (orderId: string): void => {
+    const lines = getFromStorage<OrderLine[]>(KEYS.ORDER_LINES, []);
+    const filtered = lines.filter((l) => l.orderId !== orderId);
+    setToStorage(KEYS.ORDER_LINES, filtered);
   },
 };
 
 // Allocations
 export const allocationStore = {
-  getAll: async (): Promise<Allocation[]> => {
-    const { data, error } = await supabase.from('allocations').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as Allocation);
+  getAll: (): Allocation[] => getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []),
+  getById: (id: string): Allocation | undefined => {
+    const allocations = getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []);
+    return allocations.find((a) => a.id === id);
   },
-  getById: async (id: string): Promise<Allocation | undefined> => {
-    const { data, error } = await supabase.from('allocations').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as Allocation;
+  getByOrderId: (orderId: string): Allocation[] => {
+    const allocations = getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []);
+    return allocations.filter((a) => a.orderId === orderId);
   },
-  getByOrderId: async (orderId: string): Promise<Allocation[]> => {
-    const { data, error } = await supabase.from('allocations').select('*').eq('order_id', orderId);
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as Allocation);
+  getByOrderLineId: (orderLineId: string): Allocation[] => {
+    const allocations = getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []);
+    return allocations.filter((a) => a.orderLineId === orderLineId);
   },
-  getByOrderLineId: async (orderLineId: string): Promise<Allocation[]> => {
-    const { data, error } = await supabase.from('allocations').select('*').eq('order_line_id', orderLineId);
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as Allocation);
+  create: (allocation: Omit<Allocation, 'id'>): Allocation => {
+    const allocations = getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []);
+    const newAllocation: Allocation = { ...allocation, id: uuidv4() };
+    setToStorage(KEYS.ALLOCATIONS, [...allocations, newAllocation]);
+    return newAllocation;
   },
-  create: async (allocation: Omit<Allocation, 'id'>): Promise<Allocation> => {
-    const snakeAllocation = toSnakeCase(allocation);
-    const { data, error } = await supabase.from('allocations').insert(snakeAllocation).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as Allocation;
+  update: (id: string, updates: Partial<Allocation>): Allocation | undefined => {
+    const allocations = getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []);
+    const index = allocations.findIndex((a) => a.id === id);
+    if (index === -1) return undefined;
+    allocations[index] = { ...allocations[index], ...updates };
+    setToStorage(KEYS.ALLOCATIONS, allocations);
+    return allocations[index];
   },
-  update: async (id: string, updates: Partial<Allocation>): Promise<Allocation | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('allocations').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as Allocation;
-  },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('allocations').delete().eq('id', id);
-    return !error;
+  delete: (id: string): boolean => {
+    const allocations = getFromStorage<Allocation[]>(KEYS.ALLOCATIONS, []);
+    const filtered = allocations.filter((a) => a.id !== id);
+    if (filtered.length === allocations.length) return false;
+    setToStorage(KEYS.ALLOCATIONS, filtered);
+    return true;
   },
 };
 
 // Payments
 export const paymentStore = {
-  getAll: async (): Promise<PaymentOperation[]> => {
-    const { data, error } = await supabase.from('payments').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as PaymentOperation);
+  getAll: (): PaymentOperation[] => getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []),
+  getById: (id: string): PaymentOperation | undefined => {
+    const payments = getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []);
+    return payments.find((p) => p.id === id);
   },
-  getById: async (id: string): Promise<PaymentOperation | undefined> => {
-    const { data, error } = await supabase.from('payments').select('*').eq('id', id).single();
-    if (error) return undefined;
-    return toCamelCase(data) as PaymentOperation;
+  getByOrderId: (orderId: string): PaymentOperation[] => {
+    const payments = getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []);
+    return payments.filter((p) => p.orderId === orderId);
   },
-  getByOrderId: async (orderId: string): Promise<PaymentOperation[]> => {
-    const { data, error } = await supabase.from('payments').select('*').eq('order_id', orderId);
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as PaymentOperation);
+  getBySupplierId: (supplierId: string): PaymentOperation[] => {
+    const payments = getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []);
+    return payments.filter((p) => p.supplierId === supplierId);
   },
-  getBySupplierId: async (supplierId: string): Promise<PaymentOperation[]> => {
-    const { data, error } = await supabase.from('payments').select('*').eq('supplier_id', supplierId);
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as PaymentOperation);
+  create: (payment: Omit<PaymentOperation, 'id'>): PaymentOperation => {
+    const payments = getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []);
+    const newPayment: PaymentOperation = { ...payment, id: uuidv4() };
+    setToStorage(KEYS.PAYMENTS, [...payments, newPayment]);
+    return newPayment;
   },
-  create: async (payment: Omit<PaymentOperation, 'id'>): Promise<PaymentOperation> => {
-    const snakePayment = toSnakeCase(payment);
-    const { data, error } = await supabase.from('payments').insert(snakePayment).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as PaymentOperation;
+  update: (id: string, updates: Partial<PaymentOperation>): PaymentOperation | undefined => {
+    const payments = getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []);
+    const index = payments.findIndex((p) => p.id === id);
+    if (index === -1) return undefined;
+    payments[index] = { ...payments[index], ...updates };
+    setToStorage(KEYS.PAYMENTS, payments);
+    return payments[index];
   },
-  update: async (id: string, updates: Partial<PaymentOperation>): Promise<PaymentOperation | undefined> => {
-    const snakeUpdates = toSnakeCase(updates);
-    const { data, error } = await supabase.from('payments').update(snakeUpdates).eq('id', id).select().single();
-    if (error) return undefined;
-    return toCamelCase(data) as PaymentOperation;
-  },
-  delete: async (id: string): Promise<boolean> => {
-    const { error } = await supabase.from('payments').delete().eq('id', id);
-    return !error;
+  delete: (id: string): boolean => {
+    const payments = getFromStorage<PaymentOperation[]>(KEYS.PAYMENTS, []);
+    const filtered = payments.filter((p) => p.id !== id);
+    if (filtered.length === payments.length) return false;
+    setToStorage(KEYS.PAYMENTS, filtered);
+    return true;
   },
 };
 
 // AuditLogs
 export const auditLogStore = {
-  getAll: async (): Promise<AuditLog[]> => {
-    const { data, error } = await supabase.from('audit_logs').select('*');
-    if (error) {
-      console.error(error);
-      return [];
-    }
-    return (data || []).map(row => toCamelCase(row) as AuditLog);
-  },
-  create: async (log: Omit<AuditLog, 'id' | 'timestamp'>): Promise<AuditLog> => {
-    const snakeLog = toSnakeCase({
+  getAll: (): AuditLog[] => getFromStorage<AuditLog[]>(KEYS.AUDIT_LOGS, []),
+  create: (log: Omit<AuditLog, 'id' | 'timestamp'>): AuditLog => {
+    const logs = getFromStorage<AuditLog[]>(KEYS.AUDIT_LOGS, []);
+    const newLog: AuditLog = {
       ...log,
+      id: uuidv4(),
       timestamp: new Date().toISOString(),
-    });
-    const { data, error } = await supabase.from('audit_logs').insert(snakeLog).select().single();
-    if (error) throw error;
-    return toCamelCase(data) as AuditLog;
+    };
+    setToStorage(KEYS.AUDIT_LOGS, [...logs, newLog]);
+    return newLog;
   },
-  clear: async (): Promise<void> => {
-    await supabase.from('audit_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  clear: (): void => {
+    setToStorage(KEYS.AUDIT_LOGS, []);
   },
 };
 
@@ -399,93 +343,36 @@ export const adminModeStore = {
 };
 
 // Clear all data
-export async function clearAllData(): Promise<void> {
-  await supabase.from('items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await supabase.from('suppliers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await supabase.from('allocations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await supabase.from('payments').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await supabase.from('order_lines').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await supabase.from('orders').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await supabase.from('audit_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  await initializeDefaultUser();
+export function clearAllData(): void {
+  Object.values(KEYS).forEach((key) => {
+    if (key !== KEYS.CURRENT_USER && key !== KEYS.USERS) {
+      localStorage.removeItem(key);
+    }
+  });
+  initializeDefaultUser();
 }
 
 // Export all data
-export async function exportData(): Promise<string> {
+export function exportData(): string {
   const data: Record<string, any> = {};
-  
-  const [users, items, suppliers, orders, orderLines, allocations, payments, auditLogs] = await Promise.all([
-    userStore.getAll(),
-    itemStore.getAll(),
-    supplierStore.getAll(),
-    orderStore.getAll(),
-    orderLineStore.getAll(),
-    allocationStore.getAll(),
-    paymentStore.getAll(),
-    auditLogStore.getAll(),
-  ]);
-
-  data.USERS = users;
-  data.ITEMS = items;
-  data.SUPPLIERS = suppliers;
-  data.ORDERS = orders;
-  data.ORDER_LINES = orderLines;
-  data.ALLOCATIONS = allocations;
-  data.PAYMENTS = payments;
-  data.AUDIT_LOGS = auditLogs;
-  
+  Object.entries(KEYS).forEach(([name, key]) => {
+    if (key !== KEYS.CURRENT_USER && key !== KEYS.ADMIN_MODE) {
+      data[name] = getFromStorage(key, null);
+    }
+  });
   return JSON.stringify(data, null, 2);
 }
 
 // Import data
-export async function importData(jsonString: string): Promise<boolean> {
+export function importData(jsonString: string): boolean {
   try {
     const data = JSON.parse(jsonString);
-    
-    // Clear existing data first
-    await clearAllData();
-    
-    // Import in correct order (respecting foreign keys)
-    if (data.USERS && data.USERS.length > 0) {
-      const snakeUsers = data.USERS.map((user: any) => toSnakeCase(user));
-      await supabase.from('users').insert(snakeUsers);
-    }
-    
-    if (data.ITEMS && data.ITEMS.length > 0) {
-      const snakeItems = data.ITEMS.map((item: any) => toSnakeCase(item));
-      await supabase.from('items').insert(snakeItems);
-    }
-    
-    if (data.SUPPLIERS && data.SUPPLIERS.length > 0) {
-      const snakeSuppliers = data.SUPPLIERS.map((supplier: any) => toSnakeCase(supplier));
-      await supabase.from('suppliers').insert(snakeSuppliers);
-    }
-    
-    if (data.ORDERS && data.ORDERS.length > 0) {
-      const snakeOrders = data.ORDERS.map((order: any) => toSnakeCase(order));
-      await supabase.from('orders').insert(snakeOrders);
-    }
-    
-    if (data.ORDER_LINES && data.ORDER_LINES.length > 0) {
-      const snakeLines = data.ORDER_LINES.map((line: any) => toSnakeCase(line));
-      await supabase.from('order_lines').insert(snakeLines);
-    }
-    
-    if (data.ALLOCATIONS && data.ALLOCATIONS.length > 0) {
-      const snakeAllocations = data.ALLOCATIONS.map((allocation: any) => toSnakeCase(allocation));
-      await supabase.from('allocations').insert(snakeAllocations);
-    }
-    
-    if (data.PAYMENTS && data.PAYMENTS.length > 0) {
-      const snakePayments = data.PAYMENTS.map((payment: any) => toSnakeCase(payment));
-      await supabase.from('payments').insert(snakePayments);
-    }
-    
-    if (data.AUDIT_LOGS && data.AUDIT_LOGS.length > 0) {
-      const snakeLogs = data.AUDIT_LOGS.map((log: any) => toSnakeCase(log));
-      await supabase.from('audit_logs').insert(snakeLogs);
-    }
-    
+    Object.entries(data).forEach(([name, value]) => {
+      const key = (KEYS as any)[name];
+      if (key && key !== KEYS.CURRENT_USER && key !== KEYS.ADMIN_MODE) {
+        setToStorage(key, value);
+      }
+    });
     return true;
   } catch (error) {
     console.error('Error importing data:', error);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Layout } from '../../components/Layout/Layout';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -11,8 +11,7 @@ import { itemStore, auditLogStore, currentUserStore, adminModeStore } from '../.
 import type { Item, Unit } from '../../types';
 
 export function ItemsPage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [items, setItems] = useState(itemStore.getAll());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [formData, setFormData] = useState({
@@ -24,20 +23,6 @@ export function ItemsPage() {
 
   const isAdminMode = adminModeStore.get();
   const currentUser = currentUserStore.get();
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setItems(await itemStore.getAll());
-      } catch (error) {
-        showToast('error', 'Ошибка загрузки данных');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
 
   const handleOpenModal = (item?: Item) => {
     if (item) {
@@ -65,47 +50,43 @@ export function ItemsPage() {
     setEditingItem(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!formData.name.trim()) {
       showToast('warning', 'Введите название позиции');
       return;
     }
 
-    try {
-      if (editingItem) {
-        if (!isAdminMode) {
-          showToast('error', 'Включите режим администратора для редактирования');
-          return;
-        }
-        await itemStore.update(editingItem.id, formData);
-        await auditLogStore.create({
-          action: 'UPDATE',
-          entityType: 'Item',
-          entityId: editingItem.id,
-          userId: currentUser?.id || '',
-          details: formData,
-        });
-        showToast('success', 'Позиция обновлена');
-      } else {
-        const newItem = await itemStore.create(formData);
-        await auditLogStore.create({
-          action: 'CREATE',
-          entityType: 'Item',
-          entityId: newItem.id,
-          userId: currentUser?.id || '',
-          details: formData,
-        });
-        showToast('success', 'Позиция создана');
+    if (editingItem) {
+      if (!isAdminMode) {
+        showToast('error', 'Включите режим администратора для редактирования');
+        return;
       }
-
-      setItems(await itemStore.getAll());
-      handleCloseModal();
-    } catch (error) {
-      showToast('error', 'Ошибка при сохранении позиции');
+      itemStore.update(editingItem.id, formData);
+      auditLogStore.create({
+        action: 'UPDATE',
+        entityType: 'Item',
+        entityId: editingItem.id,
+        userId: currentUser?.id || '',
+        details: formData,
+      });
+      showToast('success', 'Позиция обновлена');
+    } else {
+      const newItem = itemStore.create(formData);
+      auditLogStore.create({
+        action: 'CREATE',
+        entityType: 'Item',
+        entityId: newItem.id,
+        userId: currentUser?.id || '',
+        details: formData,
+      });
+      showToast('success', 'Позиция создана');
     }
+
+    setItems(itemStore.getAll());
+    handleCloseModal();
   };
 
-  const handleDelete = async (item: Item) => {
+  const handleDelete = (item: Item) => {
     if (!isAdminMode) {
       showToast('error', 'Включите режим администратора для удаления');
       return;
@@ -115,20 +96,16 @@ export function ItemsPage() {
       return;
     }
 
-    try {
-      await itemStore.delete(item.id);
-      await auditLogStore.create({
-        action: 'DELETE',
-        entityType: 'Item',
-        entityId: item.id,
-        userId: currentUser?.id || '',
-        details: { name: item.name },
-      });
-      setItems(await itemStore.getAll());
-      showToast('success', 'Позиция удалена');
-    } catch (error) {
-      showToast('error', 'Ошибка при удалении позиции');
-    }
+    itemStore.delete(item.id);
+    auditLogStore.create({
+      action: 'DELETE',
+      entityType: 'Item',
+      entityId: item.id,
+      userId: currentUser?.id || '',
+      details: { name: item.name },
+    });
+    setItems(itemStore.getAll());
+    showToast('success', 'Позиция удалена');
   };
 
   const columns = [
@@ -190,14 +167,7 @@ export function ItemsPage() {
           </Button>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <span className="ml-3 text-gray-600">Загрузка...</span>
-          </div>
-        ) : (
-          <Table columns={columns} data={items} emptyMessage="Нет позиций. Добавьте первую позицию." />
-        )}
+        <Table columns={columns} data={items} emptyMessage="Нет позиций. Добавьте первую позицию." />
 
         {/* Modal */}
         <Modal
