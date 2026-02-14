@@ -94,7 +94,7 @@ export function FinancePage() {
 
   const calculatePercentageAmount = () => {
     const percentage = parseFloat(percentageForm.percentage);
-    if (isNaN(percentage) || percentage <= 0) return 0;
+    if (isNaN(percentage) || percentage < 0.01) return 0;
 
     const baseAmount = percentageForm.calculationBase === 'remaining' 
       ? percentageForm.remainingAmount 
@@ -125,11 +125,6 @@ export function FinancePage() {
     
     if (amount <= 0) {
       showToast('warning', 'Введите корректный процент');
-      return;
-    }
-
-    if (amount > percentageForm.remainingAmount) {
-      showToast('warning', 'Сумма превышает остаток');
       return;
     }
 
@@ -507,32 +502,35 @@ export function FinancePage() {
             </div>
 
             {/* Amount preview */}
-            {percentageForm.percentage && parseFloat(percentageForm.percentage) > 0 && (
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">📊</span>
-                  <div className="text-sm text-gray-600">
-                    {percentageForm.percentage}% от{' '}
-                    {formatCurrency(
-                      percentageForm.calculationBase === 'remaining' 
-                        ? percentageForm.remainingAmount 
-                        : percentageForm.totalAmount,
-                      percentageForm.currency
-                    )}{' '}
-                    ={' '}
-                    <span className="font-bold text-lg text-blue-700">
-                      {formatCurrency(calculatePercentageAmount(), percentageForm.currency)}
-                    </span>
+            {percentageForm.percentage && parseFloat(percentageForm.percentage) > 0 && (() => {
+              const calculatedAmount = calculatePercentageAmount();
+              return (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">📊</span>
+                    <div className="text-sm text-gray-600">
+                      {percentageForm.percentage}% от{' '}
+                      {formatCurrency(
+                        percentageForm.calculationBase === 'remaining' 
+                          ? percentageForm.remainingAmount 
+                          : percentageForm.totalAmount,
+                        percentageForm.currency
+                      )}{' '}
+                      ={' '}
+                      <span className="font-bold text-lg text-blue-700">
+                        {formatCurrency(calculatedAmount, percentageForm.currency)}
+                      </span>
+                    </div>
                   </div>
+                  {calculatedAmount > percentageForm.remainingAmount && (
+                    <p className="mt-2 text-sm text-red-600">
+                      ⚠️ Сумма превышает остаток и будет ограничена до{' '}
+                      {formatCurrency(percentageForm.remainingAmount, percentageForm.currency)}
+                    </p>
+                  )}
                 </div>
-                {calculatePercentageAmount() > percentageForm.remainingAmount && (
-                  <p className="mt-2 text-sm text-red-600">
-                    ⚠️ Сумма превышает остаток и будет ограничена до{' '}
-                    {formatCurrency(percentageForm.remainingAmount, percentageForm.currency)}
-                  </p>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* Date */}
             <Input
